@@ -6,7 +6,7 @@ import {
   Activity, ClipboardCheck, Scale, FileSignature, Briefcase, 
   GraduationCap, MapPin, Building2, Hotel, Map, Mail, Phone, MessageSquare, Search,
   Eye, Thermometer, Recycle, Waves, Heart, AlertTriangle, Lightbulb, TrendingUp,
-  FileSearch, ListChecks, Calendar, Rocket
+  FileSearch, ListChecks, Calendar, Rocket, Download
 } from 'lucide-react';
 import { auth, db } from './firebase';
 import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
@@ -35,7 +35,7 @@ export default function App() {
   const [activeVerticalIdx, setActiveVerticalIdx] = useState(0);
   const [answers, setAnswers] = useState({});
   const [formData, setFormData] = useState({
-    nome: '', ruolo: '', tipoOrg: '', email: '', privacy: false, newsletter: false
+    nome: '', ruolo: '', denominazione: '', sitoUrl: '', email: '', privacy: false, newsletter: false
   });
   const [processingText, setProcessingText] = useState('');
 
@@ -62,24 +62,37 @@ export default function App() {
     const count = vals.length;
     
     // Calcolo punteggi per pillar
-    const calculatePillar = (pillar) => {
+    const calculatePillar = (pillar: string) => {
       if (!currentVerticals) return 0;
-      const qIds = currentVerticals.filter(v => v.esg === pillar).flatMap(v => v.questions.map(q => q.id));
-      if (qIds.length === 0) return 0;
-      const relevantAnswers = qIds.map(id => {
-        const val = answers[id];
-        if (typeof val === 'number') return val; // likert (1-5) -> convert to 0-100 later, wait, likert is 1-5. Let's map it: (val-1)*25
-        if (typeof val === 'boolean') return val ? 100 : 0;
-        if (Array.isArray(val)) return val.length > 0 ? 100 : 0; // multiple-choice
-        if (typeof val === 'string') return 100; // single-choice
+      const questions = (currentVerticals as any[]).filter(v => v.esg === pillar).flatMap(v => v.questions);
+      if (questions.length === 0) return 0;
+      
+      const relevantScores = questions.map((q: any) => {
+        const val = answers[q.id];
+        if (val === undefined || val === null) return null;
+        
+        if (q.type === 'likert') {
+          return (val - 1) * 25; // 1-5 -> 0-100
+        }
+        if (q.type === 'binary') {
+          return val ? 100 : 0;
+        }
+        if (q.type === 'single-choice') {
+          const idx = q.options.indexOf(val);
+          if (idx === -1) return 0;
+          return Math.round((idx / (q.options.length - 1)) * 100);
+        }
+        if (q.type === 'multiple-choice') {
+          if (!Array.isArray(val) || val.length === 0) return 0;
+          if (val.includes("Nessuno") || val.includes("Nessuna")) return 0;
+          // Selezionando tutte le opzioni valide (escluso "Nessuno") si ottiene 100
+          const validOptionsCount = q.options.filter((o: string) => o !== "Nessuno" && o !== "Nessuna").length;
+          return Math.round(Math.min((val.length / validOptionsCount) * 100, 100));
+        }
         return null;
       }).filter(v => v !== null);
       
-      return relevantAnswers.length > 0 ? Math.round(relevantAnswers.reduce((a, b) => {
-        let score = b;
-        if (b >= 1 && b <= 5) score = (b - 1) * 25;
-        return a + score;
-      }, 0) / relevantAnswers.length) : 0;
+      return relevantScores.length > 0 ? Math.round(relevantScores.reduce((a, b) => a + (b as number), 0) / relevantScores.length) : 0;
     };
 
     const pillarScores = {
@@ -90,21 +103,29 @@ export default function App() {
 
     const totalScore = Math.round((pillarScores.E + pillarScores.S + pillarScores.G) / 3);
 
-    const verticalScores = currentVerticals?.map(v => {
-      const qIds = v.questions.map(q => q.id);
-      const relevantAnswers = qIds.map(id => {
-        const val = answers[id];
-        if (typeof val === 'number') return val;
-        if (typeof val === 'boolean') return val ? 100 : 0;
-        if (Array.isArray(val)) return val.length > 0 ? 100 : 0;
-        if (typeof val === 'string') return 100;
+    const verticalScores = (currentVerticals as any[])?.map(v => {
+      const questions = v.questions;
+      const relevantScores = questions.map((q: any) => {
+        const val = answers[q.id];
+        if (val === undefined || val === null) return null;
+        
+        if (q.type === 'likert') return (val - 1) * 25;
+        if (q.type === 'binary') return val ? 100 : 0;
+        if (q.type === 'single-choice') {
+          const idx = q.options.indexOf(val);
+          if (idx === -1) return 0;
+          return Math.round((idx / (q.options.length - 1)) * 100);
+        }
+        if (q.type === 'multiple-choice') {
+          if (!Array.isArray(val) || val.length === 0) return 0;
+          if (val.includes("Nessuno") || val.includes("Nessuna")) return 0;
+          const validOptionsCount = q.options.filter((o: string) => o !== "Nessuno" && o !== "Nessuna").length;
+          return Math.round(Math.min((val.length / validOptionsCount) * 100, 100));
+        }
         return null;
       }).filter(v => v !== null);
-      const score = relevantAnswers.length > 0 ? Math.round(relevantAnswers.reduce((a, b) => {
-        let s = b;
-        if (b >= 1 && b <= 5) s = (b - 1) * 25;
-        return a + s;
-      }, 0) / relevantAnswers.length) : 0;
+      
+      const score = relevantScores.length > 0 ? Math.round(relevantScores.reduce((a, b) => a + (b as number), 0) / relevantScores.length) : 0;
       return { subject: v.title.split(':')[0], A: score, fullMark: 100 };
     }) || [];
 
@@ -190,7 +211,7 @@ export default function App() {
     <div className="min-h-screen bg-[#FDFDFD] text-slate-900 font-sans selection:bg-emerald-100">
       
       {/* NAVBAR */}
-      <nav className="h-16 sm:h-20 border-b bg-white/90 backdrop-blur-md sticky top-0 z-50 flex items-center px-4 sm:px-8 justify-between">
+      <nav className="print:hidden h-16 sm:h-20 border-b bg-white/90 backdrop-blur-md sticky top-0 z-50 flex items-center px-4 sm:px-8 justify-between">
         <div className="flex items-center gap-2 sm:gap-3 cursor-pointer hover:opacity-80 transition-opacity" onClick={() => setStep('corporate')}>
           <div className="w-8 h-8 sm:w-10 sm:h-10 bg-slate-900 rounded-lg sm:rounded-xl flex items-center justify-center shadow-lg">
             <Activity className="text-white w-4 h-4 sm:w-6 sm:h-6" />
@@ -216,7 +237,7 @@ export default function App() {
         )}
       </nav>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-12 print:p-0 print:max-w-none">
 
         {/* LANDING PAGE CORPORATE */}
         {step === 'corporate' && (
@@ -434,17 +455,24 @@ export default function App() {
                         <Activity className="w-6 h-6 sm:w-8 sm:h-8" />
                       </div>
                       <div className="space-y-4 sm:space-y-6 flex-1">
-                        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 group">
-                          <h3 className="text-xl sm:text-2xl font-bold text-slate-800 leading-tight">{q.text}</h3>
-                          <div className="relative group/hint self-start sm:self-auto">
-                            <Info className="w-5 h-5 text-slate-300 hover:text-emerald-500 cursor-help transition-colors" />
-                            <div className="absolute bottom-full left-0 sm:left-auto sm:right-0 mb-4 w-[calc(100vw-4rem)] sm:w-72 p-4 sm:p-5 bg-slate-900 text-white text-[11px] rounded-[24px] opacity-0 invisible group-hover/hint:opacity-100 group-hover/hint:visible transition-all z-20 shadow-2xl leading-relaxed font-medium">
-                               <div className="flex items-center gap-2 mb-2 text-emerald-400 font-black uppercase tracking-widest text-[9px]">
-                                  <Lightbulb className="w-3 h-3" /> Technical Insight
-                               </div>
-                               {q.hint}
+                        <div className="flex flex-col sm:items-start gap-2 sm:gap-3 group">
+                          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+                            <h3 className="text-xl sm:text-2xl font-bold text-slate-800 leading-tight">{q.text}</h3>
+                            <div className="relative group/hint self-start sm:self-auto">
+                              <Info className="w-5 h-5 text-slate-300 hover:text-emerald-500 cursor-help transition-colors" />
+                              <div className="absolute bottom-full left-0 sm:left-auto sm:right-0 mb-4 w-[calc(100vw-4rem)] sm:w-72 p-4 sm:p-5 bg-slate-900 text-white text-[11px] rounded-[24px] opacity-0 invisible group-hover/hint:opacity-100 group-hover/hint:visible transition-all z-20 shadow-2xl leading-relaxed font-medium">
+                                 <div className="flex items-center gap-2 mb-2 text-emerald-400 font-black uppercase tracking-widest text-[9px]">
+                                    <Lightbulb className="w-3 h-3" /> Technical Insight
+                                 </div>
+                                 {q.hint}
+                              </div>
                             </div>
                           </div>
+                          {activeVertical.questions.some(otherQ => otherQ.dependsOn?.id === q.id) && (
+                            <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 text-emerald-600 rounded-full text-[10px] font-bold uppercase tracking-widest border border-emerald-100">
+                              <Search className="w-3 h-3" /> Rispondendo Sì, sbloccherai le domande di approfondimento
+                            </div>
+                          )}
                         </div>
 
                         <div className="pt-2 sm:pt-6">
@@ -506,8 +534,12 @@ export default function App() {
                      ? 'Torna alla Selezione' 
                      : `Torna al Modulo ${activeVerticalIdx} (${currentVerticals[activeVerticalIdx - 1].questions.length} Domande)`}
                 </button>
-                <button onClick={handleNextVertical} className="bg-slate-900 text-white px-8 sm:px-14 py-5 sm:py-6 rounded-full sm:rounded-[30px] font-black text-[10px] sm:text-xs uppercase tracking-[0.3em] shadow-2xl hover:bg-emerald-700 transition-all flex items-center justify-center gap-3 sm:gap-4 active:scale-95">
-                  Analizza & Procedi <ChevronRight className="w-4 h-4" />
+                <button 
+                  onClick={handleNextVertical} 
+                  disabled={activeVertical.questions.filter((q: any) => !q.dependsOn || answers[q.dependsOn.id] === q.dependsOn.value).some((q: any) => answers[q.id] === undefined || (Array.isArray(answers[q.id]) && answers[q.id].length === 0))}
+                  className="bg-slate-900 text-white px-8 sm:px-14 py-5 sm:py-6 rounded-full sm:rounded-[30px] font-black text-[10px] sm:text-xs uppercase tracking-[0.3em] shadow-2xl hover:bg-emerald-700 transition-all flex items-center justify-center gap-3 sm:gap-4 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {activeVerticalIdx < currentVerticals.length - 1 ? 'Analizza & Procedi' : 'Completa Audit'} <ChevronRight className="w-4 h-4" />
                 </button>
               </div>
             </div>
@@ -565,26 +597,8 @@ export default function App() {
                   <input required className="w-full p-5 sm:p-6 bg-slate-50 rounded-2xl sm:rounded-[28px] border border-slate-100 outline-none focus:border-emerald-500 focus:bg-white transition-all font-bold text-sm sm:text-base" placeholder="Nome e Cognome *" value={formData.nome} onChange={e => setFormData({...formData, nome: e.target.value})} />
                   <input required type="email" className="w-full p-5 sm:p-6 bg-slate-50 rounded-2xl sm:rounded-[28px] border border-slate-100 outline-none focus:border-emerald-500 focus:bg-white transition-all font-bold text-sm sm:text-base" placeholder="Email professionale *" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} />
                   <input required className="w-full p-5 sm:p-6 bg-slate-50 rounded-2xl sm:rounded-[28px] border border-slate-100 outline-none focus:border-emerald-500 focus:bg-white transition-all font-bold text-sm sm:text-base" placeholder="Ruolo aziendale *" value={formData.ruolo} onChange={e => setFormData({...formData, ruolo: e.target.value})} />
-                  <select required className="w-full p-5 sm:p-6 bg-slate-50 rounded-2xl sm:rounded-[28px] border border-slate-100 outline-none font-bold text-sm sm:text-base" value={formData.tipoOrg} onChange={e => setFormData({...formData, tipoOrg: e.target.value})}>
-                    <option value="" disabled>Tipologia Organizzazione *</option>
-                    {auditType === 'dest' ? (
-                      <>
-                        <option value="Ente Pubblico">Ente Pubblico</option>
-                        <option value="Comune">Comune</option>
-                        <option value="DMO">DMO</option>
-                        <option value="DMC">DMC</option>
-                        <option value="Altro">Altro</option>
-                      </>
-                    ) : (
-                      <>
-                        <option value="Hotel">Hotel</option>
-                        <option value="Resort">Resort</option>
-                        <option value="B&B">B&B</option>
-                        <option value="Campeggio">Campeggio</option>
-                        <option value="Altro">Altro</option>
-                      </>
-                    )}
-                  </select>
+                  <input required className="w-full p-5 sm:p-6 bg-slate-50 rounded-2xl sm:rounded-[28px] border border-slate-100 outline-none focus:border-emerald-500 focus:bg-white transition-all font-bold text-sm sm:text-base" placeholder="Denominazione Struttura/Organizzazione *" value={formData.denominazione} onChange={e => setFormData({...formData, denominazione: e.target.value})} />
+                  <input type="url" className="w-full p-5 sm:p-6 bg-slate-50 rounded-2xl sm:rounded-[28px] border border-slate-100 outline-none focus:border-emerald-500 focus:bg-white transition-all font-bold text-sm sm:text-base md:col-span-2" placeholder="Sito Web / URL (Opzionale)" value={formData.sitoUrl} onChange={e => setFormData({...formData, sitoUrl: e.target.value})} />
                 </div>
               </div>
 
@@ -628,7 +642,7 @@ export default function App() {
 
         {/* DASHBOARD RISULTATI (EXECUTIVE REPORT) */}
         {step === 'dashboard' && (
-          <div className="space-y-10 sm:space-y-16 animate-in fade-in duration-1000 pb-16 sm:pb-24 px-4 sm:px-0">
+          <div className="space-y-10 sm:space-y-16 animate-in fade-in duration-1000 pb-16 sm:pb-24 px-4 sm:px-0 print:p-0 print:space-y-8">
             
             {/* Report Header */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 sm:gap-8 border-b pb-8 sm:pb-12">
@@ -637,26 +651,31 @@ export default function App() {
                   Sustainability Executive Report
                 </div>
                 <h2 className="text-4xl sm:text-7xl font-black text-slate-900 tracking-tighter leading-none italic break-words">
-                   {formData.entita}
+                   {formData.denominazione}
                 </h2>
                 <div className="flex flex-wrap items-center gap-3 sm:gap-6 text-slate-400 font-bold text-[10px] sm:text-xs uppercase tracking-widest">
-                   <span className="flex items-center gap-1.5 sm:gap-2"><MapPin className="w-3 h-3 sm:w-4 sm:h-4" /> {formData.citta}</span>
-                   <span className="flex items-center gap-1.5 sm:gap-2"><Calendar className="w-3 h-3 sm:w-4 sm:h-4" /> Marzo 2024</span>
-                   <span className="flex items-center gap-1.5 sm:gap-2"><FileText className="w-3 h-3 sm:w-4 sm:h-4" /> Ref: SUSTI-EXP-2024</span>
+                   {formData.sitoUrl && <span className="flex items-center gap-1.5 sm:gap-2"><Globe className="w-3 h-3 sm:w-4 sm:h-4" /> {formData.sitoUrl}</span>}
+                   <span className="flex items-center gap-1.5 sm:gap-2"><Calendar className="w-3 h-3 sm:w-4 sm:h-4" /> {new Date().toLocaleDateString('it-IT', { month: 'long', year: 'numeric' })}</span>
+                   <span className="flex items-center gap-1.5 sm:gap-2"><FileText className="w-3 h-3 sm:w-4 sm:h-4" /> Ref: SUSTI-EXP-{new Date().getFullYear()}</span>
                 </div>
               </div>
-              <div className="bg-emerald-600 text-white px-8 sm:px-10 py-5 sm:py-6 rounded-[24px] sm:rounded-[35px] text-center shadow-xl shadow-emerald-100 w-full md:w-auto">
-                 <p className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest opacity-70 mb-1">Global Score</p>
-                 <p className="text-5xl sm:text-6xl font-black leading-none">{stats.totalScore}<span className="text-xl sm:text-2xl opacity-50">/100</span></p>
+              <div className="flex flex-col gap-4 w-full md:w-auto">
+                <div className="bg-emerald-600 text-white px-8 sm:px-10 py-5 sm:py-6 rounded-[24px] sm:rounded-[35px] text-center shadow-xl shadow-emerald-100">
+                   <p className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest opacity-70 mb-1">Global Score</p>
+                   <p className="text-5xl sm:text-6xl font-black leading-none">{stats.totalScore}<span className="text-xl sm:text-2xl opacity-50">/100</span></p>
+                </div>
+                <button onClick={() => window.print()} className="print:hidden bg-slate-900 text-white px-6 py-4 rounded-[20px] font-black text-[10px] uppercase tracking-[0.2em] hover:bg-slate-800 transition-all flex items-center justify-center gap-2 shadow-lg">
+                  <Download className="w-4 h-4" /> Scarica Audit
+                </button>
               </div>
             </div>
 
             {/* Pillar Breakdown */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8">
+            <div className="grid grid-cols-1 md:grid-cols-3 print:grid-cols-3 gap-6 sm:gap-8">
               {Object.entries(stats.pillarScores).map(([key, score]) => {
                 const numScore = Number(score);
                 return (
-                <div key={key} className={`p-6 sm:p-10 bg-white border ${ESG_MAP[key].border} rounded-[30px] sm:rounded-[50px] shadow-sm space-y-5 sm:space-y-6 hover:shadow-xl transition-all group`}>
+                <div key={key} className={`p-6 sm:p-10 bg-white border ${ESG_MAP[key].border} rounded-[30px] sm:rounded-[50px] shadow-sm space-y-5 sm:space-y-6 hover:shadow-xl transition-all group print:break-inside-avoid`}>
                    <div className="flex justify-between items-start">
                       <div className={`w-12 h-12 sm:w-14 sm:h-14 ${ESG_MAP[key].bg} ${ESG_MAP[key].color} rounded-xl sm:rounded-2xl flex items-center justify-center shadow-inner`}>
                          {key === 'E' ? <Leaf className="w-5 h-5 sm:w-6 sm:h-6" /> : key === 'S' ? <Users className="w-5 h-5 sm:w-6 sm:h-6" /> : <Scale className="w-5 h-5 sm:w-6 sm:h-6" />}
@@ -669,16 +688,16 @@ export default function App() {
                          {numScore > 70 ? 'Eccellenza operativa riscontrata.' : numScore > 40 ? 'Area in fase di consolidamento strategico.' : 'Necessari interventi correttivi immediati.'}
                       </p>
                    </div>
-                   <div className="h-1.5 sm:h-2 bg-slate-100 rounded-full overflow-hidden">
-                      <div className={`h-full ${ESG_MAP[key].color.replace('text', 'bg')} transition-all duration-1000`} style={{ width: `${numScore}%` }}></div>
+                   <div className="h-1.5 sm:h-2 bg-slate-100 rounded-full overflow-hidden print:border print:border-slate-200">
+                      <div className={`h-full ${ESG_MAP[key].color.replace('text', 'bg')} transition-all duration-1000 print:!bg-current`} style={{ width: `${numScore}%` }}></div>
                    </div>
                 </div>
               )})}
             </div>
 
             {/* Radar Chart & Strategy */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-10">
-               <div className="bg-white p-8 sm:p-14 rounded-[40px] sm:rounded-[70px] shadow-sm border border-slate-100 flex flex-col items-center justify-center">
+            <div className="grid grid-cols-1 lg:grid-cols-2 print:grid-cols-2 gap-6 sm:gap-10">
+               <div className="bg-white p-8 sm:p-14 rounded-[40px] sm:rounded-[70px] shadow-sm border border-slate-100 flex flex-col items-center justify-center print:break-inside-avoid">
                   <h3 className="text-xl font-black text-slate-800 mb-6 w-full text-left">Performance per Modulo</h3>
                   <div className="w-full h-[300px] sm:h-[400px]">
                     <ResponsiveContainer width="100%" height="100%">
@@ -692,9 +711,9 @@ export default function App() {
                   </div>
                </div>
 
-               <div className="bg-slate-900 text-white p-8 sm:p-14 rounded-[40px] sm:rounded-[70px] space-y-8 sm:space-y-10 shadow-2xl relative overflow-hidden">
+               <div className="bg-slate-900 text-white print:bg-slate-100 print:text-slate-900 p-8 sm:p-14 rounded-[40px] sm:rounded-[70px] space-y-8 sm:space-y-10 shadow-2xl print:shadow-none relative overflow-hidden print:break-inside-avoid">
                   <div className="relative z-10 space-y-6 sm:space-y-8">
-                    <div className="flex items-center gap-2 sm:gap-3 text-emerald-400">
+                    <div className="flex items-center gap-2 sm:gap-3 text-emerald-400 print:text-emerald-700">
                        <Search className="w-5 h-5 sm:w-6 sm:h-6" />
                        <h4 className="text-[10px] sm:text-xs font-black uppercase tracking-[0.2em] sm:tracking-[0.3em]">Gap Analysis Tecnica</h4>
                     </div>
@@ -704,22 +723,22 @@ export default function App() {
                     <div className="space-y-4 sm:space-y-6">
                        <div className="flex items-start gap-3 sm:gap-4">
                           <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 mt-1.5 sm:mt-2 shrink-0"></div>
-                          <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
+                          <p className="text-xs sm:text-sm text-slate-400 print:text-slate-700 leading-relaxed">
                              La {auditType === 'hotel' ? 'struttura' : 'destinazione'} presenta una maturità solida ma necessita di formalizzare le policy di **Governance ESG** per accedere alla certificazione.
                           </p>
                        </div>
                        <div className="flex items-start gap-3 sm:gap-4">
                           <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 mt-1.5 sm:mt-2 shrink-0"></div>
-                          <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
+                          <p className="text-xs sm:text-sm text-slate-400 print:text-slate-700 leading-relaxed">
                              Il monitoraggio quantitativo (KPI) è l'area con maggiore potenziale di crescita (+{Math.round(100 - stats.pillarScores.E)}% possibile nel pillar Ambiente).
                           </p>
                        </div>
                     </div>
                   </div>
-                  <Award className="absolute -bottom-10 -right-10 w-40 h-40 sm:w-64 sm:h-64 text-emerald-500/5 rotate-12" />
+                  <Award className="absolute -bottom-10 -right-10 w-40 h-40 sm:w-64 sm:h-64 text-emerald-500/5 print:text-emerald-500/10 rotate-12" />
                </div>
 
-               <div className="bg-white border border-slate-100 p-8 sm:p-14 rounded-[40px] sm:rounded-[70px] space-y-8 sm:space-y-10 shadow-sm">
+               <div className="bg-white border border-slate-100 p-8 sm:p-14 rounded-[40px] sm:rounded-[70px] space-y-8 sm:space-y-10 shadow-sm print:break-inside-avoid">
                   <div className="flex items-center gap-2 sm:gap-3 text-emerald-600">
                      <Rocket className="w-5 h-5 sm:w-6 sm:h-6" />
                      <h4 className="text-[10px] sm:text-xs font-black uppercase tracking-[0.2em] sm:tracking-[0.3em]">Roadmap Strategica 2024/25</h4>
@@ -743,7 +762,7 @@ export default function App() {
             </div>
 
             {/* Upsell Professional Kit */}
-            <div className="bg-gradient-to-br from-emerald-600 to-emerald-800 rounded-[40px] sm:rounded-[80px] p-8 sm:p-16 text-center text-white space-y-8 sm:space-y-10 shadow-3xl shadow-emerald-100 relative overflow-hidden">
+            <div className="print:hidden bg-gradient-to-br from-emerald-600 to-emerald-800 rounded-[40px] sm:rounded-[80px] p-8 sm:p-16 text-center text-white space-y-8 sm:space-y-10 shadow-3xl shadow-emerald-100 relative overflow-hidden">
                <div className="relative z-10 max-w-3xl mx-auto space-y-6 sm:space-y-8">
                   <h3 className="text-3xl sm:text-5xl font-black leading-[0.95] tracking-tight">Sblocca il KIT Professionale per la Certificazione.</h3>
                   <p className="text-base sm:text-xl text-emerald-50/80 leading-relaxed font-medium">
@@ -753,7 +772,7 @@ export default function App() {
                      <button onClick={() => setStep('landing')} className="bg-white text-emerald-900 px-8 sm:px-12 py-5 sm:py-6 rounded-full sm:rounded-[32px] font-black text-[10px] sm:text-xs uppercase tracking-[0.2em] sm:tracking-[0.3em] shadow-2xl hover:scale-105 transition-transform active:scale-95 flex items-center justify-center gap-2 sm:gap-3">
                         Configura Kit ISO/GSTC <ArrowRight className="w-4 h-4" />
                      </button>
-                     <button className="bg-emerald-900/30 text-white px-8 sm:px-12 py-5 sm:py-6 rounded-full sm:rounded-[32px] font-black text-[10px] sm:text-xs uppercase tracking-[0.2em] sm:tracking-[0.3em] hover:bg-emerald-900/50 transition-all border border-white/10 backdrop-blur-md">
+                     <button onClick={() => window.print()} className="bg-emerald-900/30 text-white px-8 sm:px-12 py-5 sm:py-6 rounded-full sm:rounded-[32px] font-black text-[10px] sm:text-xs uppercase tracking-[0.2em] sm:tracking-[0.3em] hover:bg-emerald-900/50 transition-all border border-white/10 backdrop-blur-md">
                         Scarica Anteprima PDF
                      </button>
                   </div>
@@ -762,7 +781,7 @@ export default function App() {
                <div className="absolute bottom-0 right-0 w-64 h-64 sm:w-96 sm:h-96 bg-emerald-400/20 rounded-full blur-3xl translate-x-1/3 translate-y-1/3"></div>
             </div>
 
-            <div className="text-center px-4">
+            <div className="text-center px-4 print:hidden">
               <button onClick={() => { setStep('selection'); setAnswers({}); setActiveVerticalIdx(0); }} className="text-[9px] sm:text-[10px] font-black uppercase tracking-[0.3em] sm:tracking-[0.5em] text-slate-300 hover:text-emerald-600 transition-colors underline underline-offset-[8px] sm:underline-offset-[12px] decoration-slate-100">Inizia Nuovo Audit Professionale</button>
             </div>
           </div>
@@ -803,7 +822,7 @@ export default function App() {
 
       </main>
 
-      <footer className="text-center py-12 sm:py-20 border-t border-slate-100 mt-16 sm:mt-24 px-4">
+      <footer className="text-center py-12 sm:py-20 print:py-8 border-t border-slate-100 mt-16 sm:mt-24 print:mt-8 px-4">
          <div className="flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-4 mb-6 sm:mb-8 opacity-40 grayscale group hover:opacity-100 hover:grayscale-0 transition-all">
             <div className="w-10 h-10 sm:w-12 sm:h-12 bg-slate-900 rounded-xl sm:rounded-2xl flex items-center justify-center text-white text-[14px] sm:text-[16px] font-black italic shadow-xl">TS</div>
             <span className="text-xs sm:text-sm font-black uppercase tracking-[0.3em] sm:tracking-[0.4em] text-slate-900 text-center">Territori Sostenibili Benefit S.r.l.</span>

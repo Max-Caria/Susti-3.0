@@ -59,7 +59,8 @@ app.post('/api/submit-lead', async (req, res) => {
                 lead.nome,
                 lead.email,
                 lead.ruolo,
-                lead.tipoOrg,
+                lead.denominazione,
+                lead.sitoUrl || '',
                 auditType,
                 stats.totalScore,
                 stats.pillarScores.E,
@@ -85,7 +86,7 @@ app.post('/api/submit-lead', async (req, res) => {
         await transporter.sendMail({
           from: `"Territori Sostenibili" <${process.env.SMTP_USER}>`,
           to: lead.email,
-          subject: `Il tuo Executive Report SUSTI® - ${lead.tipoOrg}`,
+          subject: `Il tuo Executive Report SUSTI® - ${lead.denominazione}`,
           html: `
             <h2>Ciao ${lead.nome},</h2>
             <p>Grazie per aver completato l'assessment SUSTI® per la tua organizzazione.</p>
@@ -105,13 +106,14 @@ app.post('/api/submit-lead', async (req, res) => {
         await transporter.sendMail({
           from: `"SUSTI® System" <${process.env.SMTP_USER}>`,
           to: process.env.INTERNAL_NOTIFICATION_EMAIL || process.env.SMTP_USER,
-          subject: `Nuovo Lead SUSTI®: ${lead.nome} (${lead.tipoOrg})`,
+          subject: `Nuovo Lead SUSTI®: ${lead.nome} (${lead.denominazione})`,
           html: `
             <h2>Nuovo Lead Generato</h2>
             <p><strong>Nome:</strong> ${lead.nome}</p>
             <p><strong>Email:</strong> ${lead.email}</p>
             <p><strong>Ruolo:</strong> ${lead.ruolo}</p>
-            <p><strong>Organizzazione:</strong> ${lead.tipoOrg}</p>
+            <p><strong>Organizzazione:</strong> ${lead.denominazione}</p>
+            <p><strong>Sito Web:</strong> ${lead.sitoUrl || 'Non specificato'}</p>
             <p><strong>Tipo Audit:</strong> ${auditType}</p>
             <p><strong>Score:</strong> ${stats.totalScore}/100 (E: ${stats.pillarScores.E}, S: ${stats.pillarScores.S}, G: ${stats.pillarScores.G})</p>
             <p><strong>Newsletter:</strong> ${lead.newsletter ? 'Sì' : 'No'}</p>
