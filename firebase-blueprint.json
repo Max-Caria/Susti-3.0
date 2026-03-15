@@ -1,0 +1,52 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile containing anagrafica details.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "companyName": { "type": "string" },
+        "profileType": { "type": "string", "enum": ["hotel", "dest"] },
+        "role": { "type": "string", "enum": ["user", "admin"] },
+        "formData": { "type": "object" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "name", "email", "companyName", "profileType", "role", "createdAt"]
+    },
+    "AuditResult": {
+      "title": "AuditResult",
+      "description": "The result of an ESG audit.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "profileType": { "type": "string", "enum": ["hotel", "dest"] },
+        "scores": {
+          "type": "object",
+          "properties": {
+            "environment": { "type": "number" },
+            "social": { "type": "number" },
+            "governance": { "type": "number" }
+          },
+          "required": ["environment", "social", "governance"]
+        },
+        "totalScore": { "type": "number" },
+        "answers": { "type": "object" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "profileType", "scores", "totalScore", "answers", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Stores user profiles."
+    },
+    "/audits/{auditId}": {
+      "schema": { "$ref": "#/entities/AuditResult" },
+      "description": "Stores completed ESG audits."
+    }
+  }
+}

@@ -1,0 +1,140 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.uid;
+    }
+    
+    function uidUnchanged() {
+      return !('uid' in request.resource.data) || request.resource.data.uid == request.auth.uid;
+    }
+    
+    function uidNotModified() {
+      return !('uid' in request.resource.data) || request.resource.data.uid == resource.data.uid;
+    }
+    
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+    
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+    
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && (
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
+        (request.auth.token.email == "max@intellitalia.it" && request.auth.token.email_verified == true)
+      );
+    }
+    
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+    function isValidUser(data) {
+      return hasOnlyAllowedFields(['uid', 'name', 'email', 'companyName', 'profileType', 'role', 'createdAt', 'formData']) &&
+             data.uid is string && data.uid.size() > 0 && data.uid.size() < 100 &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.email is string && isValidEmail(data.email) && data.email.size() < 100 &&
+             data.companyName is string && data.companyName.size() > 0 && data.companyName.size() < 100 &&
+             data.profileType in ['hotel', 'dest'] &&
+             data.role in ['user', 'admin'] &&
+             data.createdAt is string &&
+             (!('formData' in data) || data.formData is map);
+    }
+    
+    function isValidAudit(data) {
+      return hasOnlyAllowedFields(['userId', 'profileType', 'scores', 'totalScore', 'answers', 'createdAt']) &&
+             data.userId is string && data.userId.size() > 0 && data.userId.size() < 100 &&
+             data.profileType in ['hotel', 'dest'] &&
+             data.scores is map && data.scores.keys().hasOnly(['environment', 'social', 'governance']) &&
+             data.scores.environment is number && data.scores.environment >= 0 && data.scores.environment <= 100 &&
+             data.scores.social is number && data.scores.social >= 0 && data.scores.social <= 100 &&
+             data.scores.governance is number && data.scores.governance >= 0 && data.scores.governance <= 100 &&
+             data.totalScore is number && data.totalScore >= 0 && data.totalScore <= 100 &&
+             data.answers is map &&
+             data.createdAt is string;
+    }
+
+    function isValidLead(data) {
+      return hasOnlyAllowedFields(['nome', 'ruolo', 'tipoOrg', 'email', 'privacy', 'newsletter', 'profileType', 'scores', 'totalScore', 'answers', 'createdAt']) &&
+             data.nome is string && data.nome.size() > 0 && data.nome.size() < 100 &&
+             data.ruolo is string && data.ruolo.size() > 0 && data.ruolo.size() < 100 &&
+             data.tipoOrg is string && data.tipoOrg.size() > 0 && data.tipoOrg.size() < 100 &&
+             data.email is string && isValidEmail(data.email) && data.email.size() < 100 &&
+             data.privacy is bool && data.privacy == true &&
+             data.newsletter is bool &&
+             data.profileType in ['hotel', 'dest'] &&
+             data.scores is map && data.scores.keys().hasOnly(['environment', 'social', 'governance']) &&
+             data.scores.environment is number && data.scores.environment >= 0 && data.scores.environment <= 100 &&
+             data.scores.social is number && data.scores.social >= 0 && data.scores.social <= 100 &&
+             data.scores.governance is number && data.scores.governance >= 0 && data.scores.governance <= 100 &&
+             data.totalScore is number && data.totalScore >= 0 && data.totalScore <= 100 &&
+             data.answers is map &&
+             data.createdAt is string;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+    
+    match /users/{userId} {
+      // Users can read their own profile, admins can read all
+      allow read: if isOwner(userId) || isAdmin();
+      
+      // Users can create their own profile, but cannot assign themselves as admin
+      allow create: if isAuthenticated() && 
+                    isOwner(userId) && 
+                    isValidUser(request.resource.data) && 
+                    uidUnchanged() &&
+                    (request.resource.data.role == 'user' || isAdmin());
+                    
+      // Users can update their own profile, but cannot change their role or uid
+      allow update: if isAuthenticated() && 
+                    isOwner(userId) && 
+                    isValidUser(request.resource.data) && 
+                    uidNotModified() &&
+                    request.resource.data.createdAt == resource.data.createdAt &&
+                    (request.resource.data.role == resource.data.role || isAdmin());
+                    
+      allow delete: if isAdmin();
+    }
+    
+    match /audits/{auditId} {
+      // Users can read their own audits, admins can read all
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      
+      // Users can create audits for themselves
+      allow create: if isAuthenticated() && 
+                    request.resource.data.userId == request.auth.uid &&
+                    isValidAudit(request.resource.data);
+                    
+      // Audits are immutable once created (except by admin)
+      allow update: if isAdmin() && isValidAudit(request.resource.data);
+      
+      allow delete: if isAdmin();
+    }
+
+    match /leads/{leadId} {
+      allow create: if isValidLead(request.resource.data);
+      allow read, update, delete: if isAdmin();
+    }
+  }
+}
