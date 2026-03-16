@@ -6,7 +6,7 @@ import {
   Activity, ClipboardCheck, Scale, FileSignature, Briefcase, 
   GraduationCap, MapPin, Building2, Hotel, Map, Mail, Phone, MessageSquare, Search,
   Eye, Thermometer, Recycle, Waves, Heart, AlertTriangle, Lightbulb, TrendingUp,
-  FileSearch, ListChecks, Calendar, Rocket, Download
+  FileSearch, ListChecks, Calendar, Rocket, Download, BrainCircuit, AlertCircle
 } from 'lucide-react';
 import { auth, db } from './firebase';
 import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
@@ -38,6 +38,7 @@ export default function App() {
     nome: '', ruolo: '', denominazione: '', sitoUrl: '', email: '', privacy: false, newsletter: false
   });
   const [processingText, setProcessingText] = useState('');
+  const [showCalendar, setShowCalendar] = useState(false);
 
   const currentVerticals = auditType === 'hotel' ? VERTICALS_HOTEL : VERTICALS_DEST;
   const activeVertical = currentVerticals ? currentVerticals[activeVerticalIdx] : null;
@@ -129,8 +130,56 @@ export default function App() {
       return { subject: v.title.split(':')[0], A: score, fullMark: 100 };
     }) || [];
 
-    return { totalScore, pillarScores, answeredCount: count, verticalScores };
-  }, [answers, currentVerticals]);
+    // Expert System Logic
+    let maturityLevel = { level: 1, title: 'Iniziale (Awareness)', desc: 'Primi passi verso la sostenibilità. Necessario strutturare un piano d\'azione.' };
+    if (totalScore > 30) maturityLevel = { level: 2, title: 'Strutturato (Development)', desc: 'Buona base di partenza. Opportunità di ottimizzazione e formalizzazione.' };
+    if (totalScore > 60) maturityLevel = { level: 3, title: 'Avanzato (Integration)', desc: 'Sostenibilità integrata nei processi. Pronti per certificazioni internazionali.' };
+    if (totalScore > 80) maturityLevel = { level: 4, title: 'Leader (Excellence)', desc: 'Eccellenza operativa e strategica. Modello di riferimento per il settore.' };
+
+    const checklist = [];
+    if (pillarScores.E < 50) checklist.push('Implementare un sistema di monitoraggio energetico e idrico.');
+    if (pillarScores.S < 50) checklist.push('Formalizzare le policy di welfare aziendale e accessibilità.');
+    if (pillarScores.G < 50) checklist.push('Nominare un Sustainability Manager e redigere un bilancio di sostenibilità.');
+    if (pillarScores.E >= 50 && pillarScores.S >= 50 && pillarScores.G >= 50) checklist.push('Mantenere gli standard attuali e puntare a certificazioni GSTC/ISO.');
+
+    const metrics = auditType === 'hotel' ? [
+      { label: 'Carbon Footprint / Guest Night', value: pillarScores.E > 60 ? 'Ottimizzata' : 'Da Calcolare' },
+      { label: 'Water Consumption / Guest Night', value: pillarScores.E > 50 ? 'Monitorata' : 'Non Monitorata' },
+      { label: '% Fornitori Locali', value: pillarScores.G > 50 ? '> 50%' : '< 30%' },
+      { label: '% Energia Rinnovabile', value: pillarScores.E > 70 ? '> 80%' : '< 20%' }
+    ] : [
+      { label: 'Indice di Pressione Turistica', value: pillarScores.S > 60 ? 'Sotto Controllo' : 'Critico' },
+      { label: '% Aree Protette', value: pillarScores.E > 50 ? 'In Aumento' : 'Stabile' },
+      { label: 'Indice Soddisfazione Residenti', value: pillarScores.S > 70 ? 'Alto' : 'Da Migliorare' },
+      { label: '% Mobilità Sostenibile', value: pillarScores.E > 60 ? '> 40%' : '< 20%' }
+    ];
+
+    let roadmap = [];
+    if (totalScore < 40) {
+      roadmap = [
+        { step: "Fase 1", time: "Mese 1-2", title: "Gap Analysis & Baseline", desc: "Misurazione iniziale delle performance e definizione degli obiettivi ESG prioritari." },
+        { step: "Fase 2", time: "Mese 3-6", title: "Implementazione Policy", desc: "Adozione di pratiche operative per efficienza energetica, gestione risorse e welfare." },
+        { step: "Fase 3", time: "Mese 7-8", title: "Formazione & Engagement", desc: "Training del personale e coinvolgimento degli stakeholder locali." },
+        { step: "Fase 4", time: "Mese 9-12", title: "Preparazione Certificazione", desc: "Allineamento finale agli standard internazionali (GSTC/ISO) e pre-audit." }
+      ];
+    } else if (totalScore < 70) {
+      roadmap = [
+        { step: "Fase 1", time: "Mese 1-2", title: "Ottimizzazione Processi", desc: "Miglioramento delle pratiche esistenti e colmatura dei gap identificati." },
+        { step: "Fase 2", time: "Mese 3-5", title: "Integrazione Supply Chain", desc: "Sviluppo di policy per acquisti verdi e coinvolgimento dei fornitori locali." },
+        { step: "Fase 3", time: "Mese 6-7", title: "Pre-Audit di Certificazione", desc: "Simulazione di audit ufficiale per verificare la conformità agli standard GSTC/ISO." },
+        { step: "Fase 4", time: "Mese 8-10", title: "Certificazione & Reporting", desc: "Ottenimento della certificazione e redazione del primo Bilancio di Sostenibilità." }
+      ];
+    } else {
+      roadmap = [
+        { step: "Fase 1", time: "Mese 1", title: "Consolidamento Dati ESG", desc: "Raccolta avanzata e strutturazione dei KPI ambientali, sociali e di governance." },
+        { step: "Fase 2", time: "Mese 2-3", title: "Audit di Certificazione", desc: "Audit ufficiale di terza parte per l'ottenimento della certificazione GSTC/ISO." },
+        { step: "Fase 3", time: "Mese 4-5", title: "Bilancio di Sostenibilità", desc: "Redazione e pubblicazione del report ESG annuale per gli stakeholder." },
+        { step: "Fase 4", time: "Mese 6+", title: "Leadership & Innovazione", desc: "Sviluppo di progetti a impatto positivo sul territorio e continuous improvement." }
+      ];
+    }
+
+    return { totalScore, pillarScores, answeredCount: count, verticalScores, expertInsights: { maturityLevel, checklist, metrics, roadmap } };
+  }, [answers, currentVerticals, auditType]);
 
   const handleNextVertical = async () => {
     if (activeVerticalIdx < currentVerticals.length - 1) {
@@ -221,20 +270,40 @@ export default function App() {
             <span className="text-[8px] sm:text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Intelligent Audit Engine</span>
           </div>
         </div>
-        {step === 'audit' && currentVerticals && (
-          <div className="flex items-center gap-3 sm:gap-6">
-             <div className="text-right hidden sm:block">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Analisi in corso</p>
-                <p className="text-sm font-bold text-slate-700">{answeredQuestionsCount} / {totalQuestions} Domande</p>
-             </div>
-             <div className="w-24 sm:w-32 h-2 sm:h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                <div className="h-full bg-slate-900 transition-all duration-700" style={{ width: `${progressPercentage}%` }}></div>
-             </div>
-             <div className="text-xs font-black text-slate-700 sm:hidden">
-                {progressPercentage}%
-             </div>
-          </div>
-        )}
+        
+        <div className="flex items-center gap-3 sm:gap-6">
+          {step === 'audit' && currentVerticals ? (
+            <>
+              <div className="text-right hidden sm:block">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Analisi in corso</p>
+                  <p className="text-sm font-bold text-slate-700">{answeredQuestionsCount} / {totalQuestions} Domande</p>
+              </div>
+              <div className="w-24 sm:w-32 h-2 sm:h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                  <div className="h-full bg-slate-900 transition-all duration-700" style={{ width: `${progressPercentage}%` }}></div>
+              </div>
+              <div className="text-xs font-black text-slate-700 sm:hidden">
+                  {progressPercentage}%
+              </div>
+            </>
+          ) : (
+            <div className="flex items-center gap-2 sm:gap-4">
+              <button 
+                onClick={() => setShowCalendar(true)}
+                className="flex items-center gap-1.5 sm:gap-2 text-[9px] sm:text-xs font-black uppercase tracking-widest text-slate-500 hover:text-slate-900 transition-colors"
+              >
+                <Calendar className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span className="hidden sm:inline">Prenota Call</span>
+              </button>
+              {step !== 'lead_form' && step !== 'processing' && (
+                <button 
+                  onClick={() => { setStep('landing_new'); setAnswers({}); setActiveVerticalIdx(0); }}
+                  className="bg-emerald-600 text-white px-3 sm:px-6 py-2 sm:py-2.5 rounded-full font-black text-[9px] sm:text-xs uppercase tracking-widest shadow-lg hover:bg-emerald-700 transition-all hover:scale-105 active:scale-95 flex items-center gap-1.5 sm:gap-2"
+                >
+                  Inizia Audit <ArrowRight className="w-3 h-3 sm:w-4 sm:h-4" />
+                </button>
+              )}
+            </div>
+          )}
+        </div>
       </nav>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-12 print:p-0 print:max-w-none">
@@ -256,6 +325,14 @@ export default function App() {
               <p className="text-lg text-slate-500 max-w-3xl mx-auto leading-relaxed">
                 Affianchiamo i nostri Clienti in tutte le fasi del loro percorso per programmare, realizzare e rendicontare iniziative di sostenibilità, promuovendo un turismo responsabile e duraturo. Il nostro obiettivo è migliorare la competitività dei territori e generare un impatto positivo sul benessere delle comunità locali.
               </p>
+              <div className="pt-6 flex flex-col sm:flex-row justify-center gap-4">
+                <button onClick={() => setStep('landing_new')} className="bg-emerald-600 text-white px-8 py-4 rounded-full font-black text-sm uppercase tracking-[0.2em] shadow-xl hover:bg-emerald-700 transition-all hover:scale-105 active:scale-95 flex items-center justify-center gap-3">
+                  Inizia l'Audit Gratuito <ArrowRight className="w-5 h-5" />
+                </button>
+                <button onClick={() => setShowCalendar(true)} className="bg-white text-slate-900 border border-slate-200 px-8 py-4 rounded-full font-black text-sm uppercase tracking-[0.2em] shadow-sm hover:bg-slate-50 transition-all hover:scale-105 active:scale-95 flex items-center justify-center gap-3">
+                  <Calendar className="w-5 h-5" /> Prenota una Call
+                </button>
+              </div>
             </div>
 
             {/* A chi ci rivolgiamo */}
@@ -384,8 +461,8 @@ export default function App() {
               <h1 className="text-5xl sm:text-7xl font-black text-slate-900 leading-[0.9] tracking-tighter">
                 SUSTI®
               </h1>
-              <p className="text-lg sm:text-xl text-slate-500 max-w-3xl mx-auto leading-relaxed">
-                Strumento innovativo gratuito di autovalutazione del rating di sostenibilità e qualità sviluppato da Territori Sostenibili per supportare le organizzazioni nel misurare e migliorare le proprie performance di sostenibilità.
+              <p className="text-lg sm:text-xl text-slate-500 max-w-3xl mx-auto leading-relaxed font-medium">
+                Scopri il tuo livello di maturità ESG in meno di 5 minuti. Ottieni un Executive Report personalizzato e una roadmap chiara per la transizione sostenibile della tua organizzazione.
               </p>
               
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-left max-w-3xl mx-auto pt-4">
@@ -526,7 +603,7 @@ export default function App() {
 
               <div className="pt-10 sm:pt-16 flex flex-col-reverse sm:flex-row justify-between gap-6 border-t border-slate-100">
                 <button 
-                  onClick={() => activeVerticalIdx === 0 ? setStep('selection') : setActiveVerticalIdx(activeVerticalIdx - 1)} 
+                  onClick={() => activeVerticalIdx === 0 ? setStep('landing_new') : setActiveVerticalIdx(activeVerticalIdx - 1)} 
                   className="flex items-center justify-center sm:justify-start gap-2 text-[10px] sm:text-xs font-black uppercase tracking-widest text-slate-400 hover:text-slate-800 transition-colors py-4 sm:py-0"
                 >
                    <ChevronLeft className="w-4 h-4" /> 
@@ -581,9 +658,9 @@ export default function App() {
               <div className="w-20 h-20 sm:w-24 sm:h-24 bg-emerald-600 rounded-[30px] sm:rounded-[40px] flex items-center justify-center mx-auto shadow-2xl shadow-emerald-200 mb-6 sm:mb-8 rotate-3">
                 <Users className="text-white w-10 h-10 sm:w-12 sm:h-12" />
               </div>
-              <h2 className="text-4xl sm:text-5xl font-black tracking-tight leading-[0.95]">Ottieni i Risultati</h2>
+              <h2 className="text-4xl sm:text-5xl font-black tracking-tight leading-[0.95]">Il tuo Audit è pronto!</h2>
               <p className="text-lg sm:text-xl text-slate-500 max-w-2xl mx-auto leading-relaxed italic font-medium">
-                Inserisci i tuoi dati per visualizzare il report e ricevere il contatto dal nostro Team Territori Sostenibili.
+                Inserisci i tuoi dati per sbloccare il tuo Executive Report personalizzato e scoprire il tuo livello di maturità ESG.
               </p>
             </div>
 
@@ -737,44 +814,140 @@ export default function App() {
                   </div>
                   <Award className="absolute -bottom-10 -right-10 w-40 h-40 sm:w-64 sm:h-64 text-emerald-500/5 print:text-emerald-500/10 rotate-12" />
                </div>
+            </div>
 
-               <div className="bg-white border border-slate-100 p-8 sm:p-14 rounded-[40px] sm:rounded-[70px] space-y-8 sm:space-y-10 shadow-sm print:break-inside-avoid">
-                  <div className="flex items-center gap-2 sm:gap-3 text-emerald-600">
-                     <Rocket className="w-5 h-5 sm:w-6 sm:h-6" />
-                     <h4 className="text-[10px] sm:text-xs font-black uppercase tracking-[0.2em] sm:tracking-[0.3em]">Roadmap Strategica 2024/25</h4>
+            {/* Expert System Analysis */}
+            <div className="space-y-6 sm:space-y-10">
+               <div className="flex items-center gap-3 sm:gap-4 border-b border-slate-200 pb-4 sm:pb-6">
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 bg-slate-900 text-white rounded-xl sm:rounded-2xl flex items-center justify-center shadow-lg">
+                     <BrainCircuit className="w-5 h-5 sm:w-6 sm:h-6" />
                   </div>
-                  <div className="space-y-8">
-                     {[
-                        { step: "01", title: "Assessment Documentale", desc: "Validazione delle evidenze per i criteri Consolidati." },
-                        { step: "02", title: "Audit di Terza Parte", desc: "Avvio del percorso di certificazione ISO/GSTC." },
-                        { step: "03", title: "Rendicontazione ESG", desc: "Pubblicazione del primo Report di Sostenibilità ufficiale." }
-                     ].map((item) => (
-                        <div key={item.step} className="flex gap-6 group">
-                           <span className="text-3xl font-black text-slate-100 group-hover:text-emerald-500 transition-colors">{item.step}</span>
-                           <div className="space-y-1">
-                              <h5 className="font-black text-slate-800 text-sm uppercase tracking-widest">{item.title}</h5>
-                              <p className="text-xs text-slate-500 font-medium">{item.desc}</p>
+                  <h3 className="text-2xl sm:text-4xl font-black text-slate-800 tracking-tight">Expert System Analysis</h3>
+               </div>
+
+               <div className="grid grid-cols-1 lg:grid-cols-3 print:grid-cols-3 gap-6 sm:gap-8">
+                  {/* Maturity Level */}
+                  <div className="bg-white p-6 sm:p-10 rounded-[30px] sm:rounded-[40px] border border-slate-100 shadow-sm space-y-6 print:break-inside-avoid">
+                     <div className="flex items-center gap-3 text-indigo-600">
+                        <TrendingUp className="w-5 h-5 sm:w-6 sm:h-6" />
+                        <h4 className="text-[10px] sm:text-xs font-black uppercase tracking-[0.2em] sm:tracking-[0.3em]">Livello di Maturità</h4>
+                     </div>
+                     <div className="space-y-2">
+                        <div className="text-4xl sm:text-5xl font-black text-slate-900">Level {stats.expertInsights.maturityLevel.level}</div>
+                        <div className="text-lg sm:text-xl font-bold text-indigo-600">{stats.expertInsights.maturityLevel.title}</div>
+                     </div>
+                     <p className="text-xs sm:text-sm text-slate-500 font-medium leading-relaxed">
+                        {stats.expertInsights.maturityLevel.desc}
+                     </p>
+                     <div className="flex gap-1 pt-4">
+                        {[1, 2, 3, 4].map(l => (
+                           <div key={l} className={`h-2 flex-1 rounded-full ${l <= stats.expertInsights.maturityLevel.level ? 'bg-indigo-600' : 'bg-slate-100'}`}></div>
+                        ))}
+                     </div>
+                  </div>
+
+                  {/* Checklist */}
+                  <div className="bg-white p-6 sm:p-10 rounded-[30px] sm:rounded-[40px] border border-slate-100 shadow-sm space-y-6 print:break-inside-avoid">
+                     <div className="flex items-center gap-3 text-amber-600">
+                        <ListChecks className="w-5 h-5 sm:w-6 sm:h-6" />
+                        <h4 className="text-[10px] sm:text-xs font-black uppercase tracking-[0.2em] sm:tracking-[0.3em]">Action Checklist</h4>
+                     </div>
+                     <ul className="space-y-4">
+                        {stats.expertInsights.checklist.map((item, i) => (
+                           <li key={i} className="flex items-start gap-3">
+                              <div className="w-5 h-5 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center shrink-0 mt-0.5">
+                                 <AlertCircle className="w-3 h-3" />
+                              </div>
+                              <span className="text-xs sm:text-sm text-slate-700 font-medium leading-relaxed">{item}</span>
+                           </li>
+                        ))}
+                     </ul>
+                  </div>
+
+                  {/* Performance Metrics */}
+                  <div className="bg-slate-900 text-white p-6 sm:p-10 rounded-[30px] sm:rounded-[40px] shadow-xl space-y-6 print:bg-slate-50 print:text-slate-900 print:border print:border-slate-200 print:shadow-none print:break-inside-avoid">
+                     <div className="flex items-center gap-3 text-emerald-400 print:text-emerald-600">
+                        <BarChart3 className="w-5 h-5 sm:w-6 sm:h-6" />
+                        <h4 className="text-[10px] sm:text-xs font-black uppercase tracking-[0.2em] sm:tracking-[0.3em]">Performance Metrics</h4>
+                     </div>
+                     <div className="space-y-5">
+                        {stats.expertInsights.metrics.map((metric, i) => (
+                           <div key={i} className="flex justify-between items-center border-b border-slate-800 print:border-slate-200 pb-4 last:border-0 last:pb-0">
+                              <span className="text-[10px] sm:text-xs font-bold text-slate-400 print:text-slate-500 uppercase tracking-wider">{metric.label}</span>
+                              <span className="text-sm sm:text-base font-black text-white print:text-slate-900">{metric.value}</span>
                            </div>
-                        </div>
-                     ))}
+                        ))}
+                     </div>
                   </div>
                </div>
             </div>
 
-            {/* Upsell Professional Kit */}
-            <div className="print:hidden bg-gradient-to-br from-emerald-600 to-emerald-800 rounded-[40px] sm:rounded-[80px] p-8 sm:p-16 text-center text-white space-y-8 sm:space-y-10 shadow-3xl shadow-emerald-100 relative overflow-hidden">
-               <div className="relative z-10 max-w-3xl mx-auto space-y-6 sm:space-y-8">
-                  <h3 className="text-3xl sm:text-5xl font-black leading-[0.95] tracking-tight">Sblocca il KIT Professionale per la Certificazione.</h3>
-                  <p className="text-base sm:text-xl text-emerald-50/80 leading-relaxed font-medium">
-                     Ottieni i modelli documentali, le checklist di pre-audit e il supporto tecnico di Territori Sostenibili per rendere la tua realtà certificabile **ISO 21401** o **GSTC**.
+            {/* Calendar Booking */}
+            <div className="bg-white border border-slate-100 rounded-[40px] sm:rounded-[80px] p-8 sm:p-16 shadow-sm relative overflow-hidden print:hidden text-center">
+               <div className="max-w-3xl mx-auto space-y-6">
+                  <div className="w-16 h-16 mx-auto bg-emerald-100 text-emerald-600 rounded-2xl flex items-center justify-center mb-6">
+                     <Calendar className="w-8 h-8" />
+                  </div>
+                  <h3 className="text-3xl sm:text-5xl font-black tracking-tight text-slate-900">Prenota una Consulenza Gratuita</h3>
+                  <p className="text-slate-500 font-medium text-lg">
+                     Discuti i risultati del tuo audit con un nostro esperto ESG e scopri come possiamo supportarti nel percorso di sostenibilità.
                   </p>
-                  <div className="flex flex-col sm:flex-row justify-center gap-4 sm:gap-5 pt-4">
-                     <button onClick={() => setStep('landing')} className="bg-white text-emerald-900 px-8 sm:px-12 py-5 sm:py-6 rounded-full sm:rounded-[32px] font-black text-[10px] sm:text-xs uppercase tracking-[0.2em] sm:tracking-[0.3em] shadow-2xl hover:scale-105 transition-transform active:scale-95 flex items-center justify-center gap-2 sm:gap-3">
-                        Configura Kit ISO/GSTC <ArrowRight className="w-4 h-4" />
-                     </button>
-                     <button onClick={() => window.print()} className="bg-emerald-900/30 text-white px-8 sm:px-12 py-5 sm:py-6 rounded-full sm:rounded-[32px] font-black text-[10px] sm:text-xs uppercase tracking-[0.2em] sm:tracking-[0.3em] hover:bg-emerald-900/50 transition-all border border-white/10 backdrop-blur-md">
-                        Scarica Anteprima PDF
-                     </button>
+                  <button 
+                     onClick={() => setShowCalendar(true)} 
+                     className="mt-8 bg-emerald-600 text-white px-8 sm:px-12 py-5 sm:py-6 rounded-full sm:rounded-[32px] font-black text-[10px] sm:text-xs uppercase tracking-[0.2em] sm:tracking-[0.3em] shadow-2xl hover:bg-emerald-700 hover:scale-105 transition-all active:scale-95 flex items-center justify-center gap-2 sm:gap-3 mx-auto"
+                  >
+                     Scegli Data e Ora <ArrowRight className="w-4 h-4" />
+                  </button>
+               </div>
+            </div>
+
+            {/* Lead Magnet Action Plan */}
+            <div className="print:hidden bg-gradient-to-br from-emerald-600 to-emerald-800 rounded-[40px] sm:rounded-[80px] p-8 sm:p-16 text-white shadow-3xl shadow-emerald-100 relative overflow-hidden">
+               <div className="relative z-10 max-w-5xl mx-auto space-y-12">
+                  <div className="text-center space-y-6">
+                     <h3 className="text-3xl sm:text-5xl font-black leading-[0.95] tracking-tight">Scarica il tuo Piano d'Azione Personalizzato</h3>
+                     <p className="text-base sm:text-xl text-emerald-50/80 leading-relaxed font-medium max-w-3xl mx-auto">
+                        Ottieni subito un documento strategico gratuito con le prime azioni pratiche da implementare per migliorare il tuo rating ESG e avviare il percorso verso la certificazione.
+                     </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8 sm:gap-12 items-center">
+                     {/* Value Proposition */}
+                     <div className="space-y-6">
+                        <div className="bg-white/10 backdrop-blur-md rounded-[30px] p-8 border border-white/20">
+                           <h4 className="text-xl font-black mb-6 flex items-center gap-3">
+                              <Target className="w-6 h-6 text-emerald-300" /> Cosa troverai nel Piano
+                           </h4>
+                           <ul className="space-y-4">
+                              {[
+                                 "Analisi delle priorità d'intervento",
+                                 "Quick wins: azioni a costo zero da fare subito",
+                                 "Roadmap di implementazione a 6 mesi",
+                                 "KPI fondamentali da monitorare",
+                                 "Linee guida per coinvolgere lo staff"
+                              ].map((item, i) => (
+                                 <li key={i} className="flex items-start gap-3">
+                                    <CheckCircle2 className="w-5 h-5 text-emerald-300 shrink-0 mt-0.5" />
+                                    <span className="text-sm font-medium text-emerald-50">{item}</span>
+                                 </li>
+                              ))}
+                           </ul>
+                        </div>
+                     </div>
+
+                     {/* Download CTA */}
+                     <div className="flex flex-col items-center justify-center space-y-6 text-center bg-white/5 backdrop-blur-sm rounded-[30px] p-8 sm:p-12 border border-white/10">
+                        <div className="w-20 h-20 bg-emerald-500/20 rounded-full flex items-center justify-center mb-2">
+                           <Download className="w-10 h-10 text-emerald-300" />
+                        </div>
+                        <h4 className="text-2xl font-black">Pronto per iniziare?</h4>
+                        <p className="text-sm text-emerald-100/80 font-medium">
+                           Scarica il PDF gratuito e inizia subito a migliorare la sostenibilità della tua organizzazione.
+                        </p>
+                        <button onClick={() => window.print()} className="w-full bg-white text-emerald-900 px-8 py-5 rounded-full font-black text-xs uppercase tracking-[0.2em] shadow-2xl hover:scale-105 transition-transform active:scale-95 flex items-center justify-center gap-3 mt-4">
+                           Scarica Piano d'Azione <ArrowRight className="w-4 h-4" />
+                        </button>
+                     </div>
                   </div>
                </div>
                <div className="absolute top-0 left-0 w-40 h-40 sm:w-64 sm:h-64 bg-white/10 rounded-full blur-3xl -translate-x-1/2 -translate-y-1/2"></div>
@@ -782,7 +955,7 @@ export default function App() {
             </div>
 
             <div className="text-center px-4 print:hidden">
-              <button onClick={() => { setStep('selection'); setAnswers({}); setActiveVerticalIdx(0); }} className="text-[9px] sm:text-[10px] font-black uppercase tracking-[0.3em] sm:tracking-[0.5em] text-slate-300 hover:text-emerald-600 transition-colors underline underline-offset-[8px] sm:underline-offset-[12px] decoration-slate-100">Inizia Nuovo Audit Professionale</button>
+              <button onClick={() => { setStep('landing_new'); setAnswers({}); setActiveVerticalIdx(0); }} className="text-[9px] sm:text-[10px] font-black uppercase tracking-[0.3em] sm:tracking-[0.5em] text-slate-300 hover:text-emerald-600 transition-colors underline underline-offset-[8px] sm:underline-offset-[12px] decoration-slate-100">Inizia Nuovo Audit Professionale</button>
             </div>
           </div>
         )}
@@ -799,7 +972,7 @@ export default function App() {
                 Accompagniamo {auditType === 'hotel' ? 'strutture' : 'destinazioni'} d'eccellenza in un percorso di validazione tramite standard GSTC e ISO.
               </p>
               <div className="flex flex-col sm:flex-row justify-center gap-4 sm:gap-6 pt-6 sm:pt-10">
-                <button className="bg-slate-900 text-white px-8 sm:px-14 py-5 sm:py-7 rounded-full sm:rounded-[35px] font-black text-[10px] sm:text-sm uppercase tracking-[0.2em] sm:tracking-[0.3em] shadow-2xl hover:-translate-y-1 transition-all">Parla con un Consulente Expert</button>
+                <button onClick={() => setShowCalendar(true)} className="bg-slate-900 text-white px-8 sm:px-14 py-5 sm:py-7 rounded-full sm:rounded-[35px] font-black text-[10px] sm:text-sm uppercase tracking-[0.2em] sm:tracking-[0.3em] shadow-2xl hover:-translate-y-1 transition-all">Parla con un Consulente Expert</button>
                 <button onClick={() => setStep('dashboard')} className="px-8 sm:px-14 py-5 sm:py-7 rounded-full sm:rounded-[35px] font-black text-[10px] sm:text-sm uppercase tracking-[0.2em] sm:tracking-[0.3em] border-2 border-slate-200 hover:bg-slate-50 transition-all">Torna al Report</button>
               </div>
             </section>
@@ -834,6 +1007,36 @@ export default function App() {
             <span className="flex items-center gap-2"><CheckCircle2 className="w-3 h-3"/> ESG Methodology v2.0</span>
          </div>
       </footer>
+
+      {/* Calendar Popup Modal */}
+      {showCalendar && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 bg-slate-900/80 backdrop-blur-sm print:hidden">
+          <div className="bg-white w-full max-w-5xl h-[85vh] rounded-[30px] sm:rounded-[40px] shadow-2xl overflow-hidden flex flex-col relative animate-in zoom-in-95 duration-200">
+            <div className="flex justify-between items-center p-6 sm:p-8 border-b border-slate-100">
+              <div className="flex items-center gap-3 text-emerald-600">
+                <Calendar className="w-6 h-6" />
+                <h3 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900">Prenota Consulenza</h3>
+              </div>
+              <button 
+                onClick={() => setShowCalendar(false)}
+                className="w-10 h-10 sm:w-12 sm:h-12 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-full flex items-center justify-center transition-colors"
+              >
+                <span className="text-xl font-black leading-none">&times;</span>
+              </button>
+            </div>
+            <div className="flex-1 w-full bg-slate-50">
+              <iframe 
+                src="https://calendar.app.google/KsL1obwB9gRn9Jiu6" 
+                width="100%" 
+                height="100%" 
+                frameBorder="0" 
+                title="Prenota Appuntamento"
+                className="w-full h-full"
+              ></iframe>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
