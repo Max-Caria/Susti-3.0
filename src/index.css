@@ -1,1 +1,127 @@
 @import "tailwindcss";
+
+@theme {
+  --color-slate-50: #f8fafc;
+  --color-slate-100: #f1f5f9;
+  --color-slate-200: #e2e8f0;
+  --color-slate-300: #cbd5e1;
+  --color-slate-400: #94a3b8;
+  --color-slate-500: #64748b;
+  --color-slate-600: #475569;
+  --color-slate-700: #334155;
+  --color-slate-800: #1e293b;
+  --color-slate-900: #0f172a;
+
+  --color-emerald-50: #ecfdf5;
+  --color-emerald-100: #d1fae5;
+  --color-emerald-200: #a7f3d0;
+  --color-emerald-300: #6ee7b7;
+  --color-emerald-400: #34d399;
+  --color-emerald-500: #10b981;
+  --color-emerald-600: #059669;
+  --color-emerald-700: #047857;
+  --color-emerald-800: #065f46;
+  --color-emerald-900: #064e3b;
+
+  --color-blue-50: #eff6ff;
+  --color-blue-100: #dbeafe;
+  --color-blue-500: #3b82f6;
+  --color-blue-600: #2563eb;
+
+  --color-amber-50: #fffbeb;
+  --color-amber-100: #fef3c7;
+  --color-amber-200: #fde68a;
+  --color-amber-300: #fcd34d;
+  --color-amber-500: #f59e0b;
+  --color-amber-600: #d97706;
+  --color-amber-800: #92400e;
+  --color-amber-900: #78350f;
+
+  --color-purple-100: #f3e8ff;
+  --color-purple-600: #9333ea;
+
+  --color-indigo-600: #4f46e5;
+
+  --color-gray-50: #f9fafb;
+  --color-gray-100: #f3f4f6;
+  --color-gray-200: #e5e7eb;
+  --color-gray-300: #d1d5db;
+  --color-gray-400: #9ca3af;
+  --color-gray-500: #6b7280;
+  --color-gray-600: #4b5563;
+  --color-gray-700: #374151;
+  --color-gray-800: #1f2937;
+  --color-gray-900: #111827;
+
+  --color-emerald-500-5: rgba(16, 185, 129, 0.05);
+  --color-emerald-500-10: rgba(16, 185, 129, 0.1);
+  --color-emerald-50-80: rgba(236, 253, 245, 0.8);
+  --color-emerald-500-20: rgba(16, 185, 129, 0.2);
+  --color-emerald-100-80: rgba(209, 250, 229, 0.8);
+  --color-emerald-400-20: rgba(52, 211, 153, 0.2);
+  --color-emerald-600-50: rgba(5, 150, 105, 0.5);
+  --color-emerald-600-5: rgba(5, 150, 105, 0.05);
+
+  --color-slate-900-60: rgba(15, 23, 42, 0.6);
+  --color-slate-900-80: rgba(15, 23, 42, 0.8);
+
+  --color-white-90: rgba(255, 255, 255, 0.9);
+  --color-white-20: rgba(255, 255, 255, 0.2);
+  --color-white-10: rgba(255, 255, 255, 0.1);
+  --color-white-5: rgba(255, 255, 255, 0.05);
+
+  --color-white: #ffffff;
+  --color-black: #000000;
+  --color-transparent: transparent;
+
+  --shadow-sm: 0 1px 2px 0 var(--shadow-color, rgba(0, 0, 0, 0.05));
+  --shadow-md: 0 4px 6px -1px var(--shadow-color, rgba(0, 0, 0, 0.1)), 0 2px 4px -2px var(--shadow-color, rgba(0, 0, 0, 0.1));
+  --shadow-lg: 0 10px 15px -3px var(--shadow-color, rgba(0, 0, 0, 0.1)), 0 4px 6px -4px var(--shadow-color, rgba(0, 0, 0, 0.1));
+  --shadow-xl: 0 20px 25px -5px var(--shadow-color, rgba(0, 0, 0, 0.1)), 0 8px 10px -6px var(--shadow-color, rgba(0, 0, 0, 0.1));
+  --shadow-2xl: 0 25px 50px -12px var(--shadow-color, rgba(0, 0, 0, 0.25));
+  --shadow-3xl: 0 35px 60px -15px var(--shadow-color, rgba(0, 0, 0, 0.3));
+  --shadow-inner: inset 0 2px 4px 0 var(--shadow-color, rgba(0, 0, 0, 0.05));
+}
+
+@media print {
+  body {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    background-color: white !important;
+  }
+  
+  @page {
+    margin: 1.5cm;
+    size: A4 portrait;
+  }
+
+  .print-break-inside-avoid {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .print-break-before {
+    break-before: page;
+    page-break-before: always;
+  }
+}
+
+.pdf-mode .print\:hidden { display: none !important; }
+.pdf-mode .print\:grid-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+.pdf-mode .print\:grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+.pdf-mode .print\:break-inside-avoid { break-inside: avoid !important; page-break-inside: avoid !important; }
+.pdf-mode .print\:p-0 { padding: 0 !important; }
+.pdf-mode .print\:max-w-none { max-width: none !important; }
+.pdf-mode .print\:shadow-none { box-shadow: none !important; }
+.pdf-mode .print\:border { border-width: 1px !important; }
+.pdf-mode .print\:border-slate-200 { border-color: #e2e8f0 !important; }
+.pdf-mode .print\:bg-slate-100 { background-color: #f1f5f9 !important; }
+.pdf-mode .print\:bg-slate-50 { background-color: #f8fafc !important; }
+.pdf-mode .print\:text-slate-900 { color: #0f172a !important; }
+.pdf-mode .print\:text-slate-700 { color: #334155 !important; }
+.pdf-mode .print\:text-slate-500 { color: #64748b !important; }
+.pdf-mode .print\:text-emerald-700 { color: #047857 !important; }
+.pdf-mode .print\:text-emerald-600 { color: #059669 !important; }
+.pdf-mode .print\:py-8 { padding-top: 2rem !important; padding-bottom: 2rem !important; }
+.pdf-mode .print\:mt-8 { margin-top: 2rem !important; }
+.pdf-mode .print\:space-y-8 > :not([hidden]) ~ :not([hidden]) { --tw-space-y-reverse: 0 !important; margin-top: calc(2rem * calc(1 - var(--tw-space-y-reverse))) !important; margin-bottom: calc(2rem * var(--tw-space-y-reverse)) !important; }

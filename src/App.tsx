@@ -13,6 +13,8 @@ import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
 import { doc, setDoc, collection, addDoc } from 'firebase/firestore';
 import { VERTICALS_HOTEL, VERTICALS_DEST } from './data/questions';
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer } from 'recharts';
+import { toPng } from 'html-to-image';
+import { jsPDF } from 'jspdf';
 
 // --- CONFIGURAZIONE ESG ---
 const ESG_MAP = {
@@ -31,6 +33,7 @@ const MATURITY_LEVELS = [
 // --- DATABASE INTEGRALE ---
 export default function App() {
   const [step, setStep] = useState('corporate'); 
+  const [lastAuditStep, setLastAuditStep] = useState(null);
   const [auditType, setAuditType] = useState(null); 
   const [activeVerticalIdx, setActiveVerticalIdx] = useState(0);
   const [answers, setAnswers] = useState({});
@@ -39,6 +42,87 @@ export default function App() {
   });
   const [processingText, setProcessingText] = useState('');
   const [showCalendar, setShowCalendar] = useState(false);
+  const [isInitialized, setIsInitialized] = useState(false);
+
+  useEffect(() => {
+    const savedStep = localStorage.getItem('susti_step');
+    const savedLastAuditStep = localStorage.getItem('susti_lastAuditStep');
+    const savedAuditType = localStorage.getItem('susti_auditType');
+    const savedActiveVerticalIdx = localStorage.getItem('susti_activeVerticalIdx');
+    const savedAnswers = localStorage.getItem('susti_answers');
+    const savedFormData = localStorage.getItem('susti_formData');
+
+    if (savedStep) setStep(savedStep);
+    if (savedLastAuditStep) setLastAuditStep(savedLastAuditStep);
+    if (savedAuditType) setAuditType(savedAuditType);
+    if (savedActiveVerticalIdx) setActiveVerticalIdx(parseInt(savedActiveVerticalIdx, 10));
+    if (savedAnswers) setAnswers(JSON.parse(savedAnswers));
+    if (savedFormData) setFormData(JSON.parse(savedFormData));
+    
+    setIsInitialized(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isInitialized) return;
+    localStorage.setItem('susti_step', step);
+    localStorage.setItem('susti_lastAuditStep', lastAuditStep || '');
+    localStorage.setItem('susti_auditType', auditType || '');
+    localStorage.setItem('susti_activeVerticalIdx', activeVerticalIdx.toString());
+    localStorage.setItem('susti_answers', JSON.stringify(answers));
+    localStorage.setItem('susti_formData', JSON.stringify(formData));
+  }, [step, lastAuditStep, auditType, activeVerticalIdx, answers, formData, isInitialized]);
+
+  // Update lastAuditStep whenever step changes to an audit-related step
+  useEffect(() => {
+    if (['landing_new', 'vertical_select', 'audit', 'lead_form', 'dashboard'].includes(step)) {
+      setLastAuditStep(step);
+    }
+  }, [step]);
+
+  const handleAutoFill = (type) => {
+    let newFormData = { nome: '', ruolo: '', denominazione: '', sitoUrl: '', email: '', privacy: true, newsletter: true };
+    if (type === 'montagna') {
+      newFormData = { ...newFormData, nome: 'Mario Rossi', ruolo: 'Direttore', denominazione: 'Consorzio Dolomiti', sitoUrl: 'www.dolomiti.it', email: 'mario@dolomiti.it' };
+    } else if (type === 'costiera') {
+      newFormData = { ...newFormData, nome: 'Laura Bianchi', ruolo: 'Sustainability Manager', denominazione: 'Riviera Sostenibile', sitoUrl: 'www.riviera.it', email: 'laura@riviera.it' };
+    } else if (type === 'citta') {
+      newFormData = { ...newFormData, nome: 'Giuseppe Verdi', ruolo: 'Assessore al Turismo', denominazione: 'Comune di Firenze', sitoUrl: 'www.firenze.it', email: 'giuseppe@firenze.it' };
+    }
+
+    setFormData(newFormData);
+    setAuditType('dest');
+    
+    // Auto-fill answers for VERTICALS_DEST
+    const dummyAnswers = {
+      d1: true,
+      d2: 4,
+      d3: ["Aree protette regolamentate"],
+      d4: true,
+      d5: 3,
+      d6: true,
+      d7: "Un team dedicato",
+      d8: true,
+      d9: 4,
+      d10: true,
+      d11: 4,
+      d12: ["Eventi tradizionali supportati"],
+      d13: 3
+    };
+    setAnswers(dummyAnswers);
+    
+    // Jump to processing
+    setStep('processing');
+    const texts = ["Validazione Criteri GSTC...", "Calcolo Indicatori ESG...", "Analisi Cross-Vertical..."];
+    let i = 0;
+    const interval = setInterval(() => {
+      setProcessingText(texts[i]);
+      i++;
+      if (i === texts.length) {
+        clearInterval(interval);
+        setTimeout(() => setStep('dashboard'), 1500);
+      }
+    }, 800);
+  };
 
   const currentVerticals = auditType === 'hotel' ? VERTICALS_HOTEL : VERTICALS_DEST;
   const activeVertical = currentVerticals ? currentVerticals[activeVerticalIdx] : null;
@@ -200,6 +284,49 @@ export default function App() {
     }
   };
 
+  const handleDownloadPDF = async () => {
+    const element = document.getElementById('report-content');
+    if (!element) return;
+
+    // Aggiungiamo una classe temporanea per nascondere elementi non necessari nel PDF
+    element.classList.add('pdf-mode');
+
+    try {
+      const dataUrl = await toPng(element, { quality: 0.98, pixelRatio: 2, backgroundColor: '#FDFDFD' });
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      });
+      
+      const imgProps = pdf.getImageProperties(dataUrl);
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+      
+      let heightLeft = pdfHeight;
+      let position = 0;
+
+      // Prima pagina
+      pdf.addImage(dataUrl, 'PNG', 0, position, pdfWidth, pdfHeight);
+      heightLeft -= pageHeight;
+
+      // Pagine successive
+      while (heightLeft > 0) {
+        position -= pageHeight;
+        pdf.addPage();
+        pdf.addImage(dataUrl, 'PNG', 0, position, pdfWidth, pdfHeight);
+        heightLeft -= pageHeight;
+      }
+      
+      pdf.save(`SUSTI_Executive_Report_${formData.denominazione || 'Azienda'}.pdf`);
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+    } finally {
+      element.classList.remove('pdf-mode');
+    }
+  };
+
   const handleLeadSubmit = async (e) => {
     e.preventDefault();
     if (!formData.privacy) {
@@ -260,14 +387,20 @@ export default function App() {
     <div className="min-h-screen bg-[#FDFDFD] text-slate-900 font-sans selection:bg-emerald-100">
       
       {/* NAVBAR */}
-      <nav className="print:hidden h-16 sm:h-20 border-b bg-white/90 backdrop-blur-md sticky top-0 z-50 flex items-center px-4 sm:px-8 justify-between">
+      <nav className="print:hidden h-16 sm:h-20 border-b bg-white-90 backdrop-blur-md sticky top-0 z-50 flex items-center px-4 sm:px-8 justify-between">
         <div className="flex items-center gap-2 sm:gap-3 cursor-pointer hover:opacity-80 transition-opacity" onClick={() => setStep('corporate')}>
-          <div className="w-8 h-8 sm:w-10 sm:h-10 bg-slate-900 rounded-lg sm:rounded-xl flex items-center justify-center shadow-lg">
-            <Activity className="text-white w-4 h-4 sm:w-6 sm:h-6" />
-          </div>
-          <div>
-            <span className="font-black text-lg sm:text-xl tracking-tight block leading-none italic">SUSTI<span className="text-emerald-600">.</span>Expert</span>
-            <span className="text-[8px] sm:text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Intelligent Audit Engine</span>
+          <div className="flex flex-col justify-center">
+            <div className="flex items-baseline">
+              <span className="text-3xl sm:text-4xl font-black tracking-tighter text-slate-800 leading-none">
+                SUST
+              </span>
+              <span className="text-3xl sm:text-4xl font-black tracking-tighter text-emerald-600 leading-none relative">
+                I
+                <Leaf className="absolute -top-2 -right-3 w-4 h-4 text-emerald-500 -rotate-12" />
+              </span>
+              <span className="text-slate-400 text-sm align-top ml-2 font-bold">®</span>
+            </div>
+            <span className="text-[8px] sm:text-[9px] text-slate-500 font-bold tracking-[0.2em] uppercase mt-1">Sustainable Tourism Index</span>
           </div>
         </div>
         
@@ -294,12 +427,28 @@ export default function App() {
                 <Calendar className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span className="hidden sm:inline">Prenota Call</span>
               </button>
               {step !== 'lead_form' && step !== 'processing' && (
-                <button 
-                  onClick={() => { setStep('landing_new'); setAnswers({}); setActiveVerticalIdx(0); }}
-                  className="bg-emerald-600 text-white px-3 sm:px-6 py-2 sm:py-2.5 rounded-full font-black text-[9px] sm:text-xs uppercase tracking-widest shadow-lg hover:bg-emerald-700 transition-all hover:scale-105 active:scale-95 flex items-center gap-1.5 sm:gap-2"
-                >
-                  Inizia Audit <ArrowRight className="w-3 h-3 sm:w-4 sm:h-4" />
-                </button>
+                <div className="flex items-center gap-2">
+                  {lastAuditStep && Object.keys(answers).length > 0 && (
+                    <button 
+                      onClick={() => { setStep('landing_new'); setAnswers({}); setActiveVerticalIdx(0); setAuditType(null); setLastAuditStep(null); }}
+                      className="text-slate-500 hover:text-emerald-600 px-3 sm:px-4 py-2 sm:py-2.5 rounded-full font-black text-[9px] sm:text-xs uppercase tracking-widest transition-colors"
+                    >
+                      Nuovo Audit
+                    </button>
+                  )}
+                  <button 
+                    onClick={() => { 
+                      if (lastAuditStep && Object.keys(answers).length > 0) {
+                        setStep(lastAuditStep);
+                      } else {
+                        setStep('landing_new'); setAnswers({}); setActiveVerticalIdx(0); setAuditType(null); 
+                      }
+                    }}
+                    className="bg-emerald-600 text-white px-3 sm:px-6 py-2 sm:py-2.5 rounded-full font-black text-[9px] sm:text-xs uppercase tracking-widest shadow-lg hover:bg-emerald-700 transition-all hover:scale-105 active:scale-95 flex items-center gap-1.5 sm:gap-2"
+                  >
+                    {lastAuditStep && Object.keys(answers).length > 0 ? 'Riprendi Audit' : 'Inizia Audit'} <ArrowRight className="w-3 h-3 sm:w-4 sm:h-4" />
+                  </button>
+                </div>
               )}
             </div>
           )}
@@ -316,9 +465,16 @@ export default function App() {
               <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-emerald-50 text-emerald-700 rounded-full text-[10px] font-black uppercase tracking-[0.2em] border border-emerald-100">
                 <Leaf className="w-3.5 h-3.5" /> Società Benefit
               </div>
-              <h1 className="text-5xl sm:text-7xl font-black text-slate-900 leading-[0.9] tracking-tighter">
-                Territori Sostenibili
-              </h1>
+              <div className="flex justify-center mb-8">
+                 <div className="flex items-center gap-4 sm:gap-6">
+                    <div className="w-16 h-16 sm:w-20 sm:h-20 bg-slate-900 rounded-2xl flex items-center justify-center text-white font-black italic shadow-xl text-2xl sm:text-4xl">TS</div>
+                    <div className="flex flex-col leading-none text-left">
+                       <span className="text-slate-900 font-black text-4xl sm:text-6xl tracking-tight leading-none">Territori</span>
+                       <span className="text-slate-900 font-black text-4xl sm:text-6xl tracking-tight leading-none">Sostenibili</span>
+                       <span className="text-emerald-600 font-bold text-sm sm:text-lg tracking-widest uppercase mt-2">Società Benefit</span>
+                    </div>
+                 </div>
+              </div>
               <p className="text-xl sm:text-2xl text-slate-500 max-w-3xl mx-auto leading-relaxed">
                 Oltre 10 anni di esperienza nello sviluppo di strategie di turismo sostenibile per valorizzare imprese turistiche, amministrazioni pubbliche, consorzi e DMO.
               </p>
@@ -326,8 +482,19 @@ export default function App() {
                 Affianchiamo i nostri Clienti in tutte le fasi del loro percorso per programmare, realizzare e rendicontare iniziative di sostenibilità, promuovendo un turismo responsabile e duraturo. Il nostro obiettivo è migliorare la competitività dei territori e generare un impatto positivo sul benessere delle comunità locali.
               </p>
               <div className="pt-6 flex flex-col sm:flex-row justify-center gap-4">
-                <button onClick={() => setStep('landing_new')} className="bg-emerald-600 text-white px-8 py-4 rounded-full font-black text-sm uppercase tracking-[0.2em] shadow-xl hover:bg-emerald-700 transition-all hover:scale-105 active:scale-95 flex items-center justify-center gap-3">
-                  Inizia l'Audit Gratuito <ArrowRight className="w-5 h-5" />
+                {lastAuditStep && Object.keys(answers).length > 0 && (
+                  <button onClick={() => { setStep('landing_new'); setAnswers({}); setActiveVerticalIdx(0); setAuditType(null); setLastAuditStep(null); }} className="bg-slate-100 text-slate-600 px-8 py-4 rounded-full font-black text-sm uppercase tracking-[0.2em] shadow-sm hover:bg-slate-200 transition-all hover:scale-105 active:scale-95 flex items-center justify-center gap-3">
+                    Nuovo Audit
+                  </button>
+                )}
+                <button onClick={() => {
+                    if (lastAuditStep && Object.keys(answers).length > 0) {
+                      setStep(lastAuditStep);
+                    } else {
+                      setStep('landing_new'); setAnswers({}); setActiveVerticalIdx(0); setAuditType(null);
+                    }
+                  }} className="bg-emerald-600 text-white px-8 py-4 rounded-full font-black text-sm uppercase tracking-[0.2em] shadow-xl hover:bg-emerald-700 transition-all hover:scale-105 active:scale-95 flex items-center justify-center gap-3">
+                  {lastAuditStep && Object.keys(answers).length > 0 ? 'Riprendi Audit' : "Inizia l'Audit Gratuito"} <ArrowRight className="w-5 h-5" />
                 </button>
                 <button onClick={() => setShowCalendar(true)} className="bg-white text-slate-900 border border-slate-200 px-8 py-4 rounded-full font-black text-sm uppercase tracking-[0.2em] shadow-sm hover:bg-slate-50 transition-all hover:scale-105 active:scale-95 flex items-center justify-center gap-3">
                   <Calendar className="w-5 h-5" /> Prenota una Call
@@ -368,9 +535,9 @@ export default function App() {
                   <div key={i} className="bg-white rounded-3xl overflow-hidden shadow-sm border border-slate-100 hover:shadow-lg transition-all group">
                     <div className="h-48 bg-slate-200 relative overflow-hidden">
                       <img src={`https://picsum.photos/seed/sustainability${i}/800/600`} alt="Progetto" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" referrerPolicy="no-referrer" />
-                      <div className="absolute inset-0 bg-gradient-to-t from-slate-900/60 to-transparent"></div>
+                      <div className="absolute inset-0 bg-gradient-to-t from-slate-900-60 to-transparent"></div>
                       <div className="absolute bottom-4 left-4">
-                        <span className="px-3 py-1 bg-white/20 backdrop-blur-md text-white text-xs font-bold rounded-full">Turismo Sostenibile</span>
+                        <span className="px-3 py-1 bg-white-20 backdrop-blur-md text-white text-xs font-bold rounded-full">Turismo Sostenibile</span>
                       </div>
                     </div>
                     <div className="p-6 space-y-3">
@@ -400,9 +567,20 @@ export default function App() {
                 <p className="text-lg text-slate-500 leading-relaxed">
                   Con un'interfaccia intuitiva, SUSTI® è semplice, rapido e progettato per ottenere risultati concreti nella transizione verso la sostenibilità.
                 </p>
-                <div className="pt-4">
-                  <button onClick={() => setStep('landing_new')} className="bg-emerald-600 text-white px-8 py-4 rounded-full font-black text-sm uppercase tracking-[0.2em] shadow-xl hover:bg-emerald-700 transition-all flex items-center justify-center gap-3">
-                    Inizia l'Assessment SUSTI® <ArrowRight className="w-5 h-5" />
+                <div className="pt-4 flex flex-col sm:flex-row gap-4">
+                  {lastAuditStep && Object.keys(answers).length > 0 && (
+                    <button onClick={() => { setStep('landing_new'); setAnswers({}); setActiveVerticalIdx(0); setAuditType(null); setLastAuditStep(null); }} className="bg-slate-100 text-slate-600 px-8 py-4 rounded-full font-black text-sm uppercase tracking-[0.2em] shadow-sm hover:bg-slate-200 transition-all flex items-center justify-center gap-3">
+                      Nuovo Audit
+                    </button>
+                  )}
+                  <button onClick={() => {
+                      if (lastAuditStep && Object.keys(answers).length > 0) {
+                        setStep(lastAuditStep);
+                      } else {
+                        setStep('landing_new'); setAnswers({}); setActiveVerticalIdx(0); setAuditType(null);
+                      }
+                    }} className="bg-emerald-600 text-white px-8 py-4 rounded-full font-black text-sm uppercase tracking-[0.2em] shadow-xl hover:bg-emerald-700 transition-all flex items-center justify-center gap-3">
+                    {lastAuditStep && Object.keys(answers).length > 0 ? 'Riprendi Audit' : "Inizia l'Assessment SUSTI®"} <ArrowRight className="w-5 h-5" />
                   </button>
                 </div>
               </div>
@@ -418,13 +596,13 @@ export default function App() {
                       { step: "05", desc: "Ti aiutiamo a comunicarli agli stakeholder" }
                     ].map((item) => (
                       <div key={item.step} className="flex gap-4 items-start">
-                        <span className="text-xl font-black text-emerald-600/50">{item.step}</span>
+                        <span className="text-xl font-black text-emerald-600-50">{item.step}</span>
                         <p className="text-slate-700 font-medium pt-0.5">{item.desc}</p>
                       </div>
                     ))}
                   </div>
                 </div>
-                <Target className="absolute -bottom-10 -right-10 w-64 h-64 text-emerald-600/5 rotate-12" />
+                <Target className="absolute -bottom-10 -right-10 w-64 h-64 text-emerald-600-5 rotate-12" />
               </div>
             </div>
 
@@ -458,9 +636,19 @@ export default function App() {
               <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-emerald-50 text-emerald-700 rounded-full text-[10px] font-black uppercase tracking-[0.2em] border border-emerald-100">
                 <ShieldCheck className="w-3.5 h-3.5" /> Professional ESG Assessment
               </div>
-              <h1 className="text-5xl sm:text-7xl font-black text-slate-900 leading-[0.9] tracking-tighter">
-                SUSTI®
-              </h1>
+              <div className="flex flex-col items-center justify-center mb-6">
+                <div className="flex items-baseline mb-2">
+                  <span className="text-7xl sm:text-9xl font-black tracking-tighter text-slate-800 leading-none">
+                    SUST
+                  </span>
+                  <span className="text-7xl sm:text-9xl font-black tracking-tighter text-emerald-600 leading-none relative">
+                    I
+                    <Leaf className="absolute -top-6 -right-8 sm:-top-8 sm:-right-12 w-10 h-10 sm:w-16 sm:h-16 text-emerald-500 -rotate-12" />
+                  </span>
+                  <span className="text-slate-400 text-3xl sm:text-5xl align-top ml-4 sm:ml-6 font-bold">®</span>
+                </div>
+                <span className="text-sm sm:text-xl text-slate-500 font-bold tracking-[0.3em] uppercase mt-4">Sustainable Tourism Index</span>
+              </div>
               <p className="text-lg sm:text-xl text-slate-500 max-w-3xl mx-auto leading-relaxed font-medium">
                 Scopri il tuo livello di maturità ESG in meno di 5 minuti. Ottieni un Executive Report personalizzato e una roadmap chiara per la transizione sostenibile della tua organizzazione.
               </p>
@@ -506,6 +694,19 @@ export default function App() {
               <button onClick={() => { setAuditType('hotel'); setStep('audit'); }} className="bg-slate-900 text-white px-8 py-4 rounded-full font-black text-sm uppercase tracking-[0.2em] shadow-xl hover:bg-slate-800 transition-all flex items-center justify-center gap-3">
                 <Hotel className="w-5 h-5" /> Audit Strutture
               </button>
+            </div>
+
+            {/* Test Auto-Fill Section */}
+            <div className="bg-amber-50 border border-amber-200 p-4 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 max-w-3xl mx-auto mt-8">
+               <div className="flex items-center gap-2 text-amber-800">
+                  <AlertCircle className="w-5 h-5" />
+                  <span className="text-xs font-bold uppercase tracking-widest">Test Auto-Fill Destinazioni</span>
+               </div>
+               <div className="flex flex-wrap gap-2 justify-center">
+                  <button onClick={() => handleAutoFill('montagna')} className="px-3 py-1.5 bg-amber-200 hover:bg-amber-300 text-amber-900 text-[10px] font-black uppercase tracking-widest rounded-lg transition-colors">Montana</button>
+                  <button onClick={() => handleAutoFill('costiera')} className="px-3 py-1.5 bg-amber-200 hover:bg-amber-300 text-amber-900 text-[10px] font-black uppercase tracking-widest rounded-lg transition-colors">Costiera</button>
+                  <button onClick={() => handleAutoFill('citta')} className="px-3 py-1.5 bg-amber-200 hover:bg-amber-300 text-amber-900 text-[10px] font-black uppercase tracking-widest rounded-lg transition-colors">Città d'Arte</button>
+               </div>
             </div>
           </div>
         )}
@@ -681,13 +882,13 @@ export default function App() {
 
               <div className="p-8 sm:p-12 bg-slate-900 text-white rounded-[40px] sm:rounded-[60px] space-y-8 sm:space-y-10 shadow-3xl">
                 <label className="flex items-start gap-4 sm:gap-5 cursor-pointer group">
-                  <input required type="checkbox" className="mt-1 w-5 h-5 sm:w-6 sm:h-6 rounded border-white/20 text-emerald-500 bg-white/10 shrink-0" checked={formData.privacy} onChange={e => setFormData({...formData, privacy: e.target.checked})} />
+                  <input required type="checkbox" className="mt-1 w-5 h-5 sm:w-6 sm:h-6 rounded border-white-20 text-emerald-500 bg-white-10 shrink-0" checked={formData.privacy} onChange={e => setFormData({...formData, privacy: e.target.checked})} />
                   <span className="text-xs sm:text-sm text-slate-400 font-medium group-hover:text-white transition-colors leading-relaxed">
                     Dichiaro di aver letto l’informativa privacy e acconsento al trattamento dei dati personali (GDPR 2016/679) per le finalità di analisi del progetto SUSTI®. *
                   </span>
                 </label>
                 <label className="flex items-start gap-4 sm:gap-5 cursor-pointer group">
-                  <input type="checkbox" className="mt-1 w-5 h-5 sm:w-6 sm:h-6 rounded border-white/20 text-emerald-500 bg-white/10 shrink-0" checked={formData.newsletter} onChange={e => setFormData({...formData, newsletter: e.target.checked})} />
+                  <input type="checkbox" className="mt-1 w-5 h-5 sm:w-6 sm:h-6 rounded border-white-20 text-emerald-500 bg-white-10 shrink-0" checked={formData.newsletter} onChange={e => setFormData({...formData, newsletter: e.target.checked})} />
                   <span className="text-xs sm:text-sm text-slate-400 font-medium group-hover:text-white transition-colors leading-relaxed">
                     Desidero iscrivermi alla newsletter per ricevere aggiornamenti su sostenibilità e turismo.
                   </span>
@@ -695,7 +896,7 @@ export default function App() {
               </div>
 
               <div className="flex flex-col sm:flex-row gap-4 sm:gap-6">
-                <button type="submit" className="w-full bg-emerald-600 text-white py-6 sm:py-8 rounded-full sm:rounded-[40px] font-black text-[10px] sm:text-sm uppercase tracking-[0.3em] sm:tracking-[0.4em] shadow-2xl shadow-emerald-500/20 hover:bg-emerald-700 transition-all flex items-center justify-center gap-3 sm:gap-5 active:scale-95 flex-1">
+                <button type="submit" className="w-full bg-emerald-600 text-white py-6 sm:py-8 rounded-full sm:rounded-[40px] font-black text-[10px] sm:text-sm uppercase tracking-[0.3em] sm:tracking-[0.4em] shadow-2xl shadow-emerald-500-20 hover:bg-emerald-700 transition-all flex items-center justify-center gap-3 sm:gap-5 active:scale-95 flex-1">
                   Genera Report <Activity className="w-5 h-5 sm:w-7 sm:h-7" />
                 </button>
               </div>
@@ -719,7 +920,7 @@ export default function App() {
 
         {/* DASHBOARD RISULTATI (EXECUTIVE REPORT) */}
         {step === 'dashboard' && (
-          <div className="space-y-10 sm:space-y-16 animate-in fade-in duration-1000 pb-16 sm:pb-24 px-4 sm:px-0 print:p-0 print:space-y-8">
+          <div id="report-content" className="space-y-10 sm:space-y-16 animate-in fade-in duration-1000 pb-16 sm:pb-24 px-4 sm:px-0 print:p-0 print:space-y-8">
             
             {/* Report Header */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 sm:gap-8 border-b pb-8 sm:pb-12">
@@ -737,18 +938,18 @@ export default function App() {
                 </div>
               </div>
               <div className="flex flex-col gap-4 w-full md:w-auto">
-                <div className="bg-emerald-600 text-white px-8 sm:px-10 py-5 sm:py-6 rounded-[24px] sm:rounded-[35px] text-center shadow-xl shadow-emerald-100">
+                <div className="bg-emerald-600 text-white px-8 sm:px-10 py-5 sm:py-6 rounded-[24px] sm:rounded-[35px] text-center shadow-xl">
                    <p className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest opacity-70 mb-1">Global Score</p>
                    <p className="text-5xl sm:text-6xl font-black leading-none">{stats.totalScore}<span className="text-xl sm:text-2xl opacity-50">/100</span></p>
                 </div>
-                <button onClick={() => window.print()} className="print:hidden bg-slate-900 text-white px-6 py-4 rounded-[20px] font-black text-[10px] uppercase tracking-[0.2em] hover:bg-slate-800 transition-all flex items-center justify-center gap-2 shadow-lg">
-                  <Download className="w-4 h-4" /> Scarica Audit
+                <button onClick={handleDownloadPDF} className="print:hidden bg-slate-900 text-white px-6 py-4 rounded-[20px] font-black text-[10px] uppercase tracking-[0.2em] hover:bg-slate-800 transition-all flex items-center justify-center gap-2 shadow-lg">
+                  <Download className="w-4 h-4" /> Scarica come PDF
                 </button>
               </div>
             </div>
 
             {/* Pillar Breakdown */}
-            <div className="grid grid-cols-1 md:grid-cols-3 print:grid-cols-3 gap-6 sm:gap-8">
+            <div className="grid grid-cols-1 md:grid-cols-3 print:grid-cols-3 gap-6 sm:gap-8 print-break-inside-avoid">
               {Object.entries(stats.pillarScores).map(([key, score]) => {
                 const numScore = Number(score);
                 return (
@@ -812,12 +1013,12 @@ export default function App() {
                        </div>
                     </div>
                   </div>
-                  <Award className="absolute -bottom-10 -right-10 w-40 h-40 sm:w-64 sm:h-64 text-emerald-500/5 print:text-emerald-500/10 rotate-12" />
+                  <Award className="absolute -bottom-10 -right-10 w-40 h-40 sm:w-64 sm:h-64 text-emerald-500-5 print:text-emerald-500-10 rotate-12" />
                </div>
             </div>
 
             {/* Expert System Analysis */}
-            <div className="space-y-6 sm:space-y-10">
+            <div className="space-y-6 sm:space-y-10 print-break-before">
                <div className="flex items-center gap-3 sm:gap-4 border-b border-slate-200 pb-4 sm:pb-6">
                   <div className="w-10 h-10 sm:w-12 sm:h-12 bg-slate-900 text-white rounded-xl sm:rounded-2xl flex items-center justify-center shadow-lg">
                      <BrainCircuit className="w-5 h-5 sm:w-6 sm:h-6" />
@@ -902,11 +1103,11 @@ export default function App() {
             </div>
 
             {/* Lead Magnet Action Plan */}
-            <div className="print:hidden bg-gradient-to-br from-emerald-600 to-emerald-800 rounded-[40px] sm:rounded-[80px] p-8 sm:p-16 text-white shadow-3xl shadow-emerald-100 relative overflow-hidden">
+            <div className="print:hidden bg-emerald-700 rounded-[40px] sm:rounded-[80px] p-8 sm:p-16 text-white shadow-3xl relative overflow-hidden">
                <div className="relative z-10 max-w-5xl mx-auto space-y-12">
                   <div className="text-center space-y-6">
                      <h3 className="text-3xl sm:text-5xl font-black leading-[0.95] tracking-tight">Scarica il tuo Piano d'Azione Personalizzato</h3>
-                     <p className="text-base sm:text-xl text-emerald-50/80 leading-relaxed font-medium max-w-3xl mx-auto">
+                     <p className="text-base sm:text-xl text-emerald-50-80 leading-relaxed font-medium max-w-3xl mx-auto">
                         Ottieni subito un documento strategico gratuito con le prime azioni pratiche da implementare per migliorare il tuo rating ESG e avviare il percorso verso la certificazione.
                      </p>
                   </div>
@@ -914,7 +1115,7 @@ export default function App() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8 sm:gap-12 items-center">
                      {/* Value Proposition */}
                      <div className="space-y-6">
-                        <div className="bg-white/10 backdrop-blur-md rounded-[30px] p-8 border border-white/20">
+                        <div className="bg-white-10 backdrop-blur-md rounded-[30px] p-8 border border-white-20">
                            <h4 className="text-xl font-black mb-6 flex items-center gap-3">
                               <Target className="w-6 h-6 text-emerald-300" /> Cosa troverai nel Piano
                            </h4>
@@ -936,26 +1137,26 @@ export default function App() {
                      </div>
 
                      {/* Download CTA */}
-                     <div className="flex flex-col items-center justify-center space-y-6 text-center bg-white/5 backdrop-blur-sm rounded-[30px] p-8 sm:p-12 border border-white/10">
-                        <div className="w-20 h-20 bg-emerald-500/20 rounded-full flex items-center justify-center mb-2">
+                     <div className="flex flex-col items-center justify-center space-y-6 text-center bg-white-5 backdrop-blur-sm rounded-[30px] p-8 sm:p-12 border border-white-10">
+                        <div className="w-20 h-20 bg-emerald-500-20 rounded-full flex items-center justify-center mb-2">
                            <Download className="w-10 h-10 text-emerald-300" />
                         </div>
                         <h4 className="text-2xl font-black">Pronto per iniziare?</h4>
-                        <p className="text-sm text-emerald-100/80 font-medium">
+                        <p className="text-sm text-emerald-100-80 font-medium">
                            Scarica il PDF gratuito e inizia subito a migliorare la sostenibilità della tua organizzazione.
                         </p>
-                        <button onClick={() => window.print()} className="w-full bg-white text-emerald-900 px-8 py-5 rounded-full font-black text-xs uppercase tracking-[0.2em] shadow-2xl hover:scale-105 transition-transform active:scale-95 flex items-center justify-center gap-3 mt-4">
-                           Scarica Piano d'Azione <ArrowRight className="w-4 h-4" />
+                        <button onClick={handleDownloadPDF} className="w-full bg-white text-emerald-900 px-8 py-5 rounded-full font-black text-xs uppercase tracking-[0.2em] shadow-2xl hover:scale-105 transition-transform active:scale-95 flex items-center justify-center gap-3 mt-4">
+                           Scarica come PDF <ArrowRight className="w-4 h-4" />
                         </button>
                      </div>
                   </div>
                </div>
-               <div className="absolute top-0 left-0 w-40 h-40 sm:w-64 sm:h-64 bg-white/10 rounded-full blur-3xl -translate-x-1/2 -translate-y-1/2"></div>
-               <div className="absolute bottom-0 right-0 w-64 h-64 sm:w-96 sm:h-96 bg-emerald-400/20 rounded-full blur-3xl translate-x-1/3 translate-y-1/3"></div>
+               <div className="absolute top-0 left-0 w-40 h-40 sm:w-64 sm:h-64 bg-white-10 rounded-full blur-3xl -translate-x-1/2 -translate-y-1/2"></div>
+               <div className="absolute bottom-0 right-0 w-64 h-64 sm:w-96 sm:h-96 bg-emerald-400-20 rounded-full blur-3xl translate-x-1/3 translate-y-1/3"></div>
             </div>
 
             <div className="text-center px-4 print:hidden">
-              <button onClick={() => { setStep('landing_new'); setAnswers({}); setActiveVerticalIdx(0); }} className="text-[9px] sm:text-[10px] font-black uppercase tracking-[0.3em] sm:tracking-[0.5em] text-slate-300 hover:text-emerald-600 transition-colors underline underline-offset-[8px] sm:underline-offset-[12px] decoration-slate-100">Inizia Nuovo Audit Professionale</button>
+              <button onClick={() => { setStep('landing_new'); setAnswers({}); setActiveVerticalIdx(0); setAuditType(null); setLastAuditStep(null); }} className="text-[9px] sm:text-[10px] font-black uppercase tracking-[0.3em] sm:tracking-[0.5em] text-slate-300 hover:text-emerald-600 transition-colors underline underline-offset-[8px] sm:underline-offset-[12px] decoration-slate-100">Inizia Nuovo Audit Professionale</button>
             </div>
           </div>
         )}
@@ -996,11 +1197,16 @@ export default function App() {
       </main>
 
       <footer className="text-center py-12 sm:py-20 print:py-8 border-t border-slate-100 mt-16 sm:mt-24 print:mt-8 px-4">
-         <div className="flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-4 mb-6 sm:mb-8 opacity-40 grayscale group hover:opacity-100 hover:grayscale-0 transition-all">
-            <div className="w-10 h-10 sm:w-12 sm:h-12 bg-slate-900 rounded-xl sm:rounded-2xl flex items-center justify-center text-white text-[14px] sm:text-[16px] font-black italic shadow-xl">TS</div>
-            <span className="text-xs sm:text-sm font-black uppercase tracking-[0.3em] sm:tracking-[0.4em] text-slate-900 text-center">Territori Sostenibili Benefit S.r.l.</span>
+         <div className="flex justify-center mb-8">
+           <div className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity" onClick={() => setStep('corporate')}>
+              <div className="w-10 h-10 bg-slate-900 rounded-xl flex items-center justify-center text-white font-black italic shadow-xl text-lg">TS</div>
+              <div className="flex flex-col leading-none text-left">
+                 <span className="text-slate-900 font-black text-xl tracking-tight leading-none">Territori Sostenibili</span>
+                 <span className="text-emerald-600 font-bold text-[10px] tracking-widest uppercase mt-1">Società Benefit</span>
+              </div>
+           </div>
          </div>
-         <p className="text-[9px] sm:text-[11px] font-bold text-slate-300 uppercase tracking-[0.4em] sm:tracking-[0.6em]">Milano — territorisostenibili.it</p>
+         <p className="text-[9px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-[0.4em] sm:tracking-[0.6em]">Milano — territorisostenibili.it</p>
          <div className="mt-8 sm:mt-12 flex flex-col sm:flex-row flex-wrap justify-center items-center gap-4 sm:gap-10 text-[9px] sm:text-[10px] font-black text-slate-400 uppercase tracking-widest opacity-60">
             <span className="flex items-center gap-2"><CheckCircle2 className="w-3 h-3"/> GSTC Recognized</span>
             <span className="flex items-center gap-2"><CheckCircle2 className="w-3 h-3"/> ISO 21401 Alignment</span>
@@ -1010,7 +1216,7 @@ export default function App() {
 
       {/* Calendar Popup Modal */}
       {showCalendar && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 bg-slate-900/80 backdrop-blur-sm print:hidden">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 bg-slate-900-80 backdrop-blur-sm print:hidden">
           <div className="bg-white w-full max-w-5xl h-[85vh] rounded-[30px] sm:rounded-[40px] shadow-2xl overflow-hidden flex flex-col relative animate-in zoom-in-95 duration-200">
             <div className="flex justify-between items-center p-6 sm:p-8 border-b border-slate-100">
               <div className="flex items-center gap-3 text-emerald-600">
@@ -1026,7 +1232,7 @@ export default function App() {
             </div>
             <div className="flex-1 w-full bg-slate-50">
               <iframe 
-                src="https://calendar.app.google/KsL1obwB9gRn9Jiu6" 
+                src="https://calendar.google.com/calendar/appointments/schedules/AcZssZ0JYs3FiG71XQcDnADGbHS8SrdSlbLYysBwdDihAYKzbuhL5pjbBeqE_c0W1WoT3gZ6_wrK1q7F?gv=true" 
                 width="100%" 
                 height="100%" 
                 frameBorder="0" 
