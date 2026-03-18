@@ -41,7 +41,7 @@ service cloud.firestore {
       return isAuthenticated() && (
         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
-        (request.auth.token.email == "max@intellitalia.it" && request.auth.token.email_verified == true)
+        request.auth.token.email == "max@intellitalia.it"
       );
     }
     
@@ -53,7 +53,7 @@ service cloud.firestore {
              data.uid is string && data.uid.size() > 0 && data.uid.size() < 100 &&
              data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
              data.email is string && isValidEmail(data.email) && data.email.size() < 100 &&
-             data.companyName is string && data.companyName.size() > 0 && data.companyName.size() < 100 &&
+             data.companyName is string && data.companyName.size() > 0 && data.companyName.size() < 200 &&
              data.profileType in ['hotel', 'dest'] &&
              data.role in ['user', 'admin'] &&
              data.createdAt is string &&
@@ -74,10 +74,11 @@ service cloud.firestore {
     }
 
     function isValidLead(data) {
-      return hasOnlyAllowedFields(['nome', 'ruolo', 'tipoOrg', 'email', 'privacy', 'newsletter', 'profileType', 'scores', 'totalScore', 'answers', 'createdAt']) &&
+      return hasOnlyAllowedFields(['nome', 'ruolo', 'denominazione', 'sitoUrl', 'email', 'privacy', 'newsletter', 'profileType', 'scores', 'totalScore', 'answers', 'createdAt']) &&
              data.nome is string && data.nome.size() > 0 && data.nome.size() < 100 &&
              data.ruolo is string && data.ruolo.size() > 0 && data.ruolo.size() < 100 &&
-             data.tipoOrg is string && data.tipoOrg.size() > 0 && data.tipoOrg.size() < 100 &&
+             data.denominazione is string && data.denominazione.size() > 0 && data.denominazione.size() < 200 &&
+             (!('sitoUrl' in data) || (data.sitoUrl is string && data.sitoUrl.size() < 500)) &&
              data.email is string && isValidEmail(data.email) && data.email.size() < 100 &&
              data.privacy is bool && data.privacy == true &&
              data.newsletter is bool &&
@@ -89,6 +90,28 @@ service cloud.firestore {
              data.totalScore is number && data.totalScore >= 0 && data.totalScore <= 100 &&
              data.answers is map &&
              data.createdAt is string;
+    }
+
+    function isValidJourney(data) {
+      return hasOnlyAllowedFields(['userId', 'type', 'currentMilestone', 'statusList', 'adminNotes', 'sharedDocs', 'createdAt', 'updatedAt']) &&
+             data.userId is string && data.userId.size() > 0 && data.userId.size() < 100 &&
+             data.type in ['hotel', 'dest'] &&
+             data.currentMilestone is number && data.currentMilestone >= 0 &&
+             data.statusList is map &&
+             data.adminNotes is string && data.adminNotes.size() < 10000 &&
+             data.sharedDocs is list && data.sharedDocs.size() < 100 &&
+             data.createdAt is string &&
+             data.updatedAt is string;
+    }
+
+    function isValidMilestone(data) {
+      return hasOnlyAllowedFields(['id', 'label', 'description', 'targetPillar', 'requiredEvidence', 'order']) &&
+             data.id is string && data.id.size() > 0 && data.id.size() < 100 &&
+             data.label is string && data.label.size() > 0 && data.label.size() < 200 &&
+             data.description is string && data.description.size() < 5000 &&
+             data.targetPillar in ['E', 'S', 'G', 'All'] &&
+             data.requiredEvidence is string && data.requiredEvidence.size() < 5000 &&
+             data.order is number && data.order >= 0;
     }
 
     // ===============================================================
@@ -135,6 +158,32 @@ service cloud.firestore {
     match /leads/{leadId} {
       allow create: if isValidLead(request.resource.data);
       allow read, update, delete: if isAdmin();
+    }
+
+    match /journeys/{journeyId} {
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      
+      allow create: if isAuthenticated() && 
+                    request.resource.data.userId == request.auth.uid &&
+                    isValidJourney(request.resource.data);
+                    
+      allow update: if isAuthenticated() && (
+                      (resource.data.userId == request.auth.uid && 
+                       request.resource.data.adminNotes == resource.data.adminNotes &&
+                       request.resource.data.sharedDocs == resource.data.sharedDocs &&
+                       request.resource.data.userId == resource.data.userId &&
+                       request.resource.data.type == resource.data.type &&
+                       request.resource.data.createdAt == resource.data.createdAt &&
+                       isValidJourney(request.resource.data)) ||
+                      (isAdmin() && isValidJourney(request.resource.data))
+                    );
+                    
+      allow delete: if isAdmin();
+    }
+
+    match /milestones/{milestoneId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin() && isValidMilestone(request.resource.data);
     }
   }
 }

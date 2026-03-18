@@ -6,11 +6,11 @@ import {
   Activity, ClipboardCheck, Scale, FileSignature, Briefcase, 
   GraduationCap, MapPin, Building2, Hotel, Map, Mail, Phone, MessageSquare, Search,
   Eye, Thermometer, Recycle, Waves, Heart, AlertTriangle, Lightbulb, TrendingUp,
-  FileSearch, ListChecks, Calendar, Rocket, Download, BrainCircuit, AlertCircle
+  FileSearch, ListChecks, Calendar, Rocket, Download, BrainCircuit, AlertCircle, FileText, User
 } from 'lucide-react';
 import { auth, db } from './firebase';
-import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
-import { doc, setDoc, collection, addDoc } from 'firebase/firestore';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
+import { doc, setDoc, collection, addDoc, getDoc, updateDoc, getDocs } from 'firebase/firestore';
 import { VERTICALS_HOTEL, VERTICALS_DEST } from './data/questions';
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer } from 'recharts';
 import { toPng } from 'html-to-image';
@@ -33,6 +33,7 @@ const MATURITY_LEVELS = [
 // --- DATABASE INTEGRALE ---
 export default function App() {
   const [step, setStep] = useState('corporate'); 
+  const [academyTab, setAcademyTab] = useState('destinations');
   const [lastAuditStep, setLastAuditStep] = useState(null);
   const [auditType, setAuditType] = useState(null); 
   const [activeVerticalIdx, setActiveVerticalIdx] = useState(0);
@@ -42,7 +43,119 @@ export default function App() {
   });
   const [processingText, setProcessingText] = useState('');
   const [showCalendar, setShowCalendar] = useState(false);
+  const [user, setUser] = useState(null);
+  const [journey, setJourney] = useState(null);
+  const [isAuthReady, setIsAuthReady] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [adminUsers, setAdminUsers] = useState([]);
+  const [adminJourneys, setAdminJourneys] = useState([]);
+  const [selectedAdminJourney, setSelectedAdminJourney] = useState(null);
+  const [loginEmail, setLoginEmail] = useState('');
+
+  const handleUserLoginSetup = async (userObj, email, name, companyName) => {
+    try {
+      const userDoc = await getDoc(doc(db, 'users', userObj.uid));
+      if (!userDoc.exists()) {
+        await setDoc(doc(db, 'users', userObj.uid), {
+          uid: userObj.uid,
+          name: name || 'Utente',
+          email: email,
+          companyName: companyName || 'Azienda non specificata',
+          profileType: auditType || 'hotel',
+          role: email === 'max@intellitalia.it' ? 'admin' : 'user',
+          formData: formData,
+          createdAt: new Date().toISOString()
+        });
+      }
+      
+      if (Object.keys(answers).length > 0) {
+        const auditData = {
+          userId: userObj.uid,
+          profileType: auditType || 'hotel',
+          scores: {
+            environment: Math.round(stats.pillarScores.E),
+            social: Math.round(stats.pillarScores.S),
+            governance: Math.round(stats.pillarScores.G)
+          },
+          totalScore: Math.round(stats.totalScore),
+          answers: answers,
+          createdAt: new Date().toISOString()
+        };
+        await addDoc(collection(db, 'audits'), auditData);
+      }
+      
+      const journeyDoc = await getDoc(doc(db, 'journeys', userObj.uid));
+      if (!journeyDoc.exists()) {
+        const newJourney = {
+          userId: userObj.uid,
+          type: auditType || 'hotel',
+          currentMilestone: 0,
+          statusList: {},
+          adminNotes: '',
+          sharedDocs: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+        await setDoc(doc(db, 'journeys', userObj.uid), newJourney);
+        setJourney({ id: userObj.uid, ...newJourney });
+      } else {
+        setJourney({ id: journeyDoc.id, ...journeyDoc.data() });
+      }
+    } catch (error) {
+      console.error("Login setup error:", error);
+      throw error;
+    }
+  };
+
+  useEffect(() => {
+    if (step === 'admin_dashboard' && user?.role === 'admin') {
+      const fetchAdminData = async () => {
+        try {
+          const usersSnapshot = await getDocs(collection(db, 'users'));
+          const usersData = usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          setAdminUsers(usersData);
+
+          const journeysSnapshot = await getDocs(collection(db, 'journeys'));
+          const journeysData = journeysSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          setAdminJourneys(journeysData);
+        } catch (error) {
+          console.error("Error fetching admin data:", error);
+        }
+      };
+      fetchAdminData();
+    }
+  }, [step, user, db]);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      if (currentUser) {
+        try {
+          const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+          if (userDoc.exists()) {
+            setUser({ ...currentUser, role: userDoc.data().role });
+          } else {
+            setUser(currentUser);
+          }
+          
+          const journeyDoc = await getDoc(doc(db, 'journeys', currentUser.uid));
+          if (journeyDoc.exists()) {
+            setJourney({ id: journeyDoc.id, ...journeyDoc.data() });
+          } else {
+            setJourney(null);
+          }
+        } catch (error) {
+          console.error("Error fetching user data:", error);
+          setUser(currentUser);
+          setJourney(null);
+        }
+      } else {
+        setUser(null);
+        setJourney(null);
+      }
+      setIsAuthReady(true);
+    });
+    return () => unsubscribe();
+  }, []);
 
   useEffect(() => {
     const savedStep = localStorage.getItem('susti_step');
@@ -367,6 +480,21 @@ export default function App() {
           answers: answers,
           createdAt: new Date().toISOString()
         });
+        
+        // Auto-login or create account with the email provided
+        const email = formData.email;
+        const dummyPassword = email + "_SustiAuth!";
+        let userCredential;
+        try {
+          userCredential = await signInWithEmailAndPassword(auth, email, dummyPassword);
+        } catch (err: any) {
+          if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') {
+            userCredential = await createUserWithEmailAndPassword(auth, email, dummyPassword);
+          } else {
+            throw err;
+          }
+        }
+        await handleUserLoginSetup(userCredential.user, email, formData.nome, formData.denominazione);
       } catch (dbErr) {
         console.log("Salvataggio DB fallito, procedo comunque per mostrare il report", dbErr);
       }
@@ -420,12 +548,58 @@ export default function App() {
             </>
           ) : (
             <div className="flex items-center gap-2 sm:gap-4">
+              <div className="relative group">
+                <button 
+                  onClick={() => setStep('academy')}
+                  className="flex items-center gap-1.5 sm:gap-2 text-[9px] sm:text-xs font-black uppercase tracking-widest text-slate-500 hover:text-slate-900 transition-colors py-2"
+                >
+                  <GraduationCap className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span className="hidden sm:inline">Academy</span>
+                </button>
+                <div className="absolute top-full right-0 sm:left-1/2 sm:-translate-x-1/2 mt-0 w-48 bg-white border border-slate-100 shadow-xl rounded-2xl p-2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200">
+                  <button 
+                    onClick={() => { setStep('academy'); setAcademyTab('destinations'); }} 
+                    className="block w-full text-left px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-emerald-50 hover:text-emerald-700 rounded-xl transition-colors"
+                  >
+                    Corso Destinazioni
+                  </button>
+                  <button 
+                    onClick={() => { setStep('academy'); setAcademyTab('hotels'); }} 
+                    className="block w-full text-left px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-emerald-50 hover:text-emerald-700 rounded-xl transition-colors"
+                  >
+                    Corso Hotel
+                  </button>
+                </div>
+              </div>
               <button 
                 onClick={() => setShowCalendar(true)}
                 className="flex items-center gap-1.5 sm:gap-2 text-[9px] sm:text-xs font-black uppercase tracking-widest text-slate-500 hover:text-slate-900 transition-colors"
               >
                 <Calendar className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span className="hidden sm:inline">Prenota Call</span>
               </button>
+              {user && (
+                <button 
+                  onClick={() => setStep('journey')}
+                  className="flex items-center gap-1.5 sm:gap-2 text-[9px] sm:text-xs font-black uppercase tracking-widest text-slate-500 hover:text-slate-900 transition-colors"
+                >
+                  <Rocket className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span className="hidden sm:inline">Percorso</span>
+                </button>
+              )}
+              {!user && (
+                <button 
+                  onClick={() => setStep('auth_wall')}
+                  className="flex items-center gap-1.5 sm:gap-2 text-[9px] sm:text-xs font-black uppercase tracking-widest text-slate-500 hover:text-slate-900 transition-colors"
+                >
+                  <User className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span className="hidden sm:inline">Accedi</span>
+                </button>
+              )}
+              {user?.role === 'admin' && (
+                <button 
+                  onClick={() => setStep('admin_dashboard')}
+                  className="flex items-center gap-1.5 sm:gap-2 text-[9px] sm:text-xs font-black uppercase tracking-widest text-emerald-600 hover:text-emerald-800 transition-colors"
+                >
+                  <BrainCircuit className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span className="hidden sm:inline">Admin</span>
+                </button>
+              )}
               {step !== 'lead_form' && step !== 'processing' && (
                 <div className="flex items-center gap-2">
                   {lastAuditStep && Object.keys(answers).length > 0 && (
@@ -456,6 +630,151 @@ export default function App() {
       </nav>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-12 print:p-0 print:max-w-none">
+
+        {/* ACADEMY PAGE */}
+        {step === 'academy' && (
+          <div className="space-y-20 animate-in fade-in duration-1000">
+            {/* Hero Section */}
+            <div className="text-center space-y-8 max-w-4xl mx-auto pt-10">
+              <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-emerald-50 text-emerald-700 rounded-full text-[10px] font-black uppercase tracking-[0.2em] border border-emerald-100">
+                <GraduationCap className="w-3.5 h-3.5" /> Destinova | Destination Management Academy
+              </div>
+              <h1 className="text-5xl sm:text-7xl font-black text-slate-900 leading-[0.9] tracking-tighter">
+                Master in <span className="text-emerald-600">Sostenibilità</span> Turistica
+              </h1>
+              <p className="text-lg text-slate-500 max-w-3xl mx-auto leading-relaxed">
+                Il percorso di formazione completo per comprendere le certificazioni di sostenibilità, i criteri ESG e gli standard GSTC. Scegli il percorso più adatto alla tua realtà.
+              </p>
+              <div className="pt-6 flex justify-center">
+                <a href="https://www.destinova.it" target="_blank" rel="noopener noreferrer" className="bg-emerald-600 text-white px-8 py-4 rounded-full font-black text-sm uppercase tracking-[0.2em] shadow-xl hover:bg-emerald-700 transition-all hover:scale-105 active:scale-95 flex items-center justify-center gap-3">
+                  Iscriviti su Destinova <ArrowRight className="w-5 h-5" />
+                </a>
+              </div>
+            </div>
+
+            {/* Course Selection Boxes */}
+            <div className="max-w-5xl mx-auto grid md:grid-cols-2 gap-8 px-4">
+              <div 
+                onClick={() => setAcademyTab('destinations')}
+                className={`cursor-pointer rounded-[40px] p-8 sm:p-12 transition-all duration-300 border-2 ${academyTab === 'destinations' ? 'bg-emerald-50 border-emerald-500 shadow-xl scale-105' : 'bg-white border-slate-100 shadow-sm hover:shadow-md hover:border-emerald-200'}`}
+              >
+                <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mb-8 ${academyTab === 'destinations' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                  <Map className="w-8 h-8" />
+                </div>
+                <h3 className="text-2xl font-black text-slate-900 mb-4">Corso per Destinazioni</h3>
+                <p className="text-slate-500 leading-relaxed mb-8">
+                  Dedicato a DMO, consorzi turistici e amministrazioni locali. Scopri come applicare i criteri GSTC-D per gestire e promuovere una destinazione in modo sostenibile.
+                </p>
+                <div className={`inline-flex items-center gap-2 font-bold text-sm uppercase tracking-widest ${academyTab === 'destinations' ? 'text-emerald-600' : 'text-slate-400'}`}>
+                  Vedi Moduli <ArrowRight className="w-4 h-4" />
+                </div>
+              </div>
+
+              <div 
+                onClick={() => setAcademyTab('hotels')}
+                className={`cursor-pointer rounded-[40px] p-8 sm:p-12 transition-all duration-300 border-2 ${academyTab === 'hotels' ? 'bg-emerald-50 border-emerald-500 shadow-xl scale-105' : 'bg-white border-slate-100 shadow-sm hover:shadow-md hover:border-emerald-200'}`}
+              >
+                <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mb-8 ${academyTab === 'hotels' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                  <Hotel className="w-8 h-8" />
+                </div>
+                <h3 className="text-2xl font-black text-slate-900 mb-4">Corso per Hotel</h3>
+                <p className="text-slate-500 leading-relaxed mb-8">
+                  Progettato per albergatori e manager dell'ospitalità. Impara a implementare gli standard GSTC-I per ottimizzare le risorse e ottenere la certificazione.
+                </p>
+                <div className={`inline-flex items-center gap-2 font-bold text-sm uppercase tracking-widest ${academyTab === 'hotels' ? 'text-emerald-600' : 'text-slate-400'}`}>
+                  Vedi Moduli <ArrowRight className="w-4 h-4" />
+                </div>
+              </div>
+            </div>
+
+            {/* Course Modules */}
+            <div className="max-w-5xl mx-auto">
+              <div className="bg-slate-50 rounded-[40px] p-8 sm:p-16">
+                <div className="text-center mb-12">
+                  <h2 className="text-3xl sm:text-4xl font-black tracking-tight text-slate-900 mb-4">
+                    I Moduli del Corso: {academyTab === 'destinations' ? 'Destinazioni' : 'Hotel'}
+                  </h2>
+                  <p className="text-slate-500">Un percorso strutturato per guidarti dalla teoria alla pratica della certificazione.</p>
+                </div>
+                
+                <div className="grid gap-6">
+                  {(academyTab === 'destinations' ? [
+                    {
+                      title: "Introduzione alla Sostenibilità Turistica",
+                      desc: "Comprendere i fondamenti: criteri ESG, SDGs dell'Agenda 2030 e l'impatto del turismo sull'ambiente e sulle comunità locali.",
+                      icon: <Globe className="w-6 h-6 text-emerald-600" />
+                    },
+                    {
+                      title: "Il framework GSTC per le Destinazioni (GSTC-D)",
+                      desc: "Analisi approfondita dei criteri del Global Sustainable Tourism Council specifici per la gestione sostenibile delle destinazioni turistiche.",
+                      icon: <Map className="w-6 h-6 text-emerald-600" />
+                    },
+                    {
+                      title: "Gestione del Territorio e Comunità Locali",
+                      desc: "Strategie per massimizzare i benefici economici e sociali per la comunità locale minimizzando gli impatti negativi.",
+                      icon: <Users className="w-6 h-6 text-emerald-600" />
+                    },
+                    {
+                      title: "Preparazione all'Audit di Certificazione",
+                      desc: "Step pratici, documentazione necessaria e best practice per affrontare con successo l'audit di certificazione ufficiale per destinazioni.",
+                      icon: <ClipboardCheck className="w-6 h-6 text-emerald-600" />
+                    },
+                    {
+                      title: "Destination Marketing Sostenibile",
+                      desc: "Strategie di marketing etico: come valorizzare il proprio impegno e comunicare il valore della destinazione ai viaggiatori consapevoli.",
+                      icon: <MessageSquare className="w-6 h-6 text-emerald-600" />
+                    }
+                  ] : [
+                    {
+                      title: "Introduzione alla Sostenibilità nell'Ospitalità",
+                      desc: "I fondamenti della sostenibilità applicati al settore alberghiero: vantaggi competitivi, riduzione dei costi e aspettative dei clienti.",
+                      icon: <Globe className="w-6 h-6 text-emerald-600" />
+                    },
+                    {
+                      title: "Il framework GSTC per gli Hotel (GSTC-I)",
+                      desc: "Come applicare gli standard GSTC all'interno delle strutture ricettive: dall'efficienza energetica alla gestione del personale.",
+                      icon: <Hotel className="w-6 h-6 text-emerald-600" />
+                    },
+                    {
+                      title: "Efficienza Energetica e Gestione Risorse",
+                      desc: "Tecniche pratiche per la riduzione dei consumi idrici ed energetici, gestione dei rifiuti e approvvigionamento sostenibile.",
+                      icon: <Zap className="w-6 h-6 text-emerald-600" />
+                    },
+                    {
+                      title: "Preparazione all'Audit di Certificazione",
+                      desc: "Come organizzare la documentazione, formare lo staff e preparare la struttura per superare l'audit di certificazione GSTC.",
+                      icon: <ClipboardCheck className="w-6 h-6 text-emerald-600" />
+                    },
+                    {
+                      title: "Green Marketing e Comunicazione",
+                      desc: "Come comunicare in modo trasparente ed efficace le iniziative sostenibili dell'hotel evitando il rischio di greenwashing.",
+                      icon: <MessageSquare className="w-6 h-6 text-emerald-600" />
+                    }
+                  ]).map((module, idx) => (
+                    <div key={idx} className="bg-white p-6 sm:p-8 rounded-3xl shadow-sm border border-slate-100 flex flex-col sm:flex-row gap-6 items-start hover:shadow-md transition-shadow">
+                      <div className="w-16 h-16 shrink-0 bg-emerald-50 rounded-2xl flex items-center justify-center">
+                        {module.icon}
+                      </div>
+                      <div>
+                        <div className="text-emerald-600 font-black text-sm tracking-widest uppercase mb-2">Modulo {idx + 1}</div>
+                        <h3 className="text-xl font-bold text-slate-900 mb-3">{module.title}</h3>
+                        <p className="text-slate-500 leading-relaxed">{module.desc}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                
+                <div className="mt-16 text-center">
+                  <a href="https://www.destinova.it" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-3 bg-slate-900 text-white px-8 py-4 rounded-full font-black text-sm uppercase tracking-[0.2em] shadow-xl hover:bg-slate-800 transition-all hover:scale-105 active:scale-95">
+                    Iscriviti al Corso su Destinova <ArrowRight className="w-5 h-5" />
+                  </a>
+                </div>
+              </div>
+            </div>
+            
+            <div className="pb-20"></div>
+          </div>
+        )}
 
         {/* LANDING PAGE CORPORATE */}
         {step === 'corporate' && (
@@ -1155,9 +1474,431 @@ export default function App() {
                <div className="absolute bottom-0 right-0 w-64 h-64 sm:w-96 sm:h-96 bg-emerald-400-20 rounded-full blur-3xl translate-x-1/3 translate-y-1/3"></div>
             </div>
 
-            <div className="text-center px-4 print:hidden">
-              <button onClick={() => { setStep('landing_new'); setAnswers({}); setActiveVerticalIdx(0); setAuditType(null); setLastAuditStep(null); }} className="text-[9px] sm:text-[10px] font-black uppercase tracking-[0.3em] sm:tracking-[0.5em] text-slate-300 hover:text-emerald-600 transition-colors underline underline-offset-[8px] sm:underline-offset-[12px] decoration-slate-100">Inizia Nuovo Audit Professionale</button>
+            <div className="text-center px-4 print:hidden space-y-6">
+              <button 
+                onClick={async () => {
+                  if (user) {
+                    if (!journey) {
+                      try {
+                        const newJourney = {
+                          userId: user.uid,
+                          type: auditType || 'hotel',
+                          currentMilestone: 0,
+                          statusList: {},
+                          adminNotes: '',
+                          sharedDocs: [],
+                          createdAt: new Date().toISOString(),
+                          updatedAt: new Date().toISOString()
+                        };
+                        await setDoc(doc(db, 'journeys', user.uid), newJourney);
+                        setJourney({ id: user.uid, ...newJourney });
+                      } catch (error) {
+                        console.error("Error creating journey:", error);
+                      }
+                    }
+                    setStep('journey');
+                  } else {
+                    setStep('auth_wall');
+                  }
+                }}
+                className="bg-emerald-600 text-white px-8 py-4 rounded-full font-black text-sm uppercase tracking-[0.2em] shadow-xl hover:bg-emerald-700 transition-all hover:scale-105 active:scale-95 flex items-center justify-center gap-3 mx-auto"
+              >
+                Inizia il tuo Percorso di Certificazione <ArrowRight className="w-5 h-5" />
+              </button>
+              <button onClick={() => { setStep('landing_new'); setAnswers({}); setActiveVerticalIdx(0); setAuditType(null); setLastAuditStep(null); }} className="block mx-auto text-[9px] sm:text-[10px] font-black uppercase tracking-[0.3em] sm:tracking-[0.5em] text-slate-300 hover:text-emerald-600 transition-colors underline underline-offset-[8px] sm:underline-offset-[12px] decoration-slate-100">Inizia Nuovo Audit Professionale</button>
             </div>
+          </div>
+        )}
+
+        {/* AUTH WALL */}
+        {step === 'auth_wall' && (
+          <div className="max-w-md mx-auto mt-20 p-8 bg-white rounded-[40px] shadow-xl border border-slate-100 text-center animate-in fade-in slide-in-from-bottom-8">
+            <div className="w-20 h-20 bg-emerald-50 rounded-full flex items-center justify-center mx-auto mb-6">
+              <BrainCircuit className="w-10 h-10 text-emerald-600" />
+            </div>
+            <h2 className="text-3xl font-black text-slate-900 mb-4 tracking-tight">Accedi al tuo Percorso</h2>
+            <p className="text-slate-500 mb-8 leading-relaxed">
+              Inserisci l'indirizzo email che hai utilizzato al termine dell'audit per accedere alla tua Roadmap di Certificazione.
+            </p>
+            <form 
+              onSubmit={async (e) => {
+                e.preventDefault();
+                try {
+                  const dummyPassword = loginEmail + "_SustiAuth!";
+                  let userCredential;
+                  try {
+                    userCredential = await signInWithEmailAndPassword(auth, loginEmail, dummyPassword);
+                  } catch (err: any) {
+                    if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') {
+                      userCredential = await createUserWithEmailAndPassword(auth, loginEmail, dummyPassword);
+                    } else {
+                      throw err;
+                    }
+                  }
+                  await handleUserLoginSetup(userCredential.user, loginEmail, 'Utente', 'Azienda non specificata');
+                  setStep('journey');
+                } catch (error) {
+                  console.error("Login error:", error);
+                  alert("Errore durante l'accesso. Assicurati di aver abilitato Email/Password in Firebase.");
+                }
+              }}
+              className="space-y-4"
+            >
+              <input 
+                type="email" 
+                required
+                value={loginEmail}
+                onChange={(e) => setLoginEmail(e.target.value)}
+                placeholder="La tua email professionale..."
+                className="w-full p-5 bg-slate-50 rounded-2xl border border-slate-100 outline-none focus:border-emerald-500 focus:bg-white transition-all font-bold text-sm text-center"
+              />
+              <button 
+                type="submit"
+                className="w-full bg-slate-900 text-white px-8 py-4 rounded-full font-black text-sm uppercase tracking-[0.2em] shadow-xl hover:bg-slate-800 transition-all hover:scale-105 active:scale-95 flex items-center justify-center gap-3"
+              >
+                Accedi <ArrowRight className="w-5 h-5" />
+              </button>
+            </form>
+            <button 
+              onClick={() => setStep('corporate')}
+              className="mt-6 text-xs font-bold text-slate-400 hover:text-slate-600 uppercase tracking-widest underline underline-offset-4"
+            >
+              Torna alla Home
+            </button>
+          </div>
+        )}
+
+        {/* ACTIVE JOURNEY */}
+        {step === 'journey' && !journey && (
+          <div className="max-w-md mx-auto mt-20 p-8 bg-white rounded-[40px] shadow-xl border border-slate-100 text-center animate-in fade-in">
+            <div className="w-16 h-16 border-4 border-emerald-200 border-t-emerald-600 rounded-full animate-spin mx-auto mb-6"></div>
+            <h2 className="text-xl font-black text-slate-900 mb-2">Caricamento Percorso...</h2>
+            <p className="text-slate-500 text-sm">Stiamo recuperando i tuoi dati.</p>
+          </div>
+        )}
+        
+        {step === 'journey' && journey && (
+          <div className="space-y-12 animate-in fade-in duration-1000 pb-24">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 border-b pb-8">
+              <div className="space-y-4">
+                <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-emerald-50 text-emerald-700 rounded-full text-[10px] font-black uppercase tracking-[0.2em]">
+                  <Rocket className="w-3.5 h-3.5" /> Certification Roadmap
+                </div>
+                <h2 className="text-4xl sm:text-6xl font-black text-slate-900 tracking-tighter leading-none">
+                  Il tuo Percorso
+                </h2>
+                <p className="text-slate-500 font-medium">
+                  Monitora i progressi verso la certificazione di sostenibilità.
+                </p>
+              </div>
+              <div className="flex items-center gap-4">
+                <button 
+                  onClick={() => signOut(auth).then(() => { setStep('corporate'); setJourney(null); })}
+                  className="text-xs font-bold text-slate-400 hover:text-slate-600 uppercase tracking-widest"
+                >
+                  Esci
+                </button>
+              </div>
+            </div>
+
+            <div className="grid lg:grid-cols-[1fr_350px] gap-8">
+              <div className="space-y-6">
+                <h3 className="text-2xl font-black text-slate-900 tracking-tight">Milestones</h3>
+                
+                {[
+                  { id: 'm1', label: 'Gap Analysis & Assessment', desc: 'Analisi dettagliata dello stato attuale rispetto agli standard GSTC.' },
+                  { id: 'm2', label: 'Action Plan & Strategia', desc: 'Definizione del piano d\'azione per colmare i gap identificati.' },
+                  { id: 'm3', label: 'Implementazione Pratiche ESG', desc: 'Adozione delle policy e procedure richieste dallo standard.' },
+                  { id: 'm4', label: 'Formazione Staff', desc: 'Coinvolgimento e formazione del personale sulle nuove pratiche.' },
+                  { id: 'm5', label: 'Pre-Audit Interno', desc: 'Verifica finale della conformità prima dell\'audit ufficiale.' },
+                  { id: 'm6', label: 'Audit di Certificazione', desc: 'Audit ufficiale con ente terzo accreditato.' }
+                ].map((milestone, idx) => {
+                  const status = journey.statusList[milestone.id] || 'not_started';
+                  const isCurrent = journey.currentMilestone === idx;
+                  
+                  return (
+                    <div key={milestone.id} className={`p-6 rounded-3xl border-2 transition-all ${isCurrent ? 'border-emerald-500 bg-emerald-50/50 shadow-md' : 'border-slate-100 bg-white'}`}>
+                      <div className="flex flex-col sm:flex-row gap-6 items-start">
+                        <div className={`w-12 h-12 shrink-0 rounded-full flex items-center justify-center font-black text-lg ${status === 'completed' ? 'bg-emerald-600 text-white' : isCurrent ? 'bg-emerald-200 text-emerald-800' : 'bg-slate-100 text-slate-400'}`}>
+                          {status === 'completed' ? <ListChecks className="w-6 h-6" /> : idx + 1}
+                        </div>
+                        <div className="flex-1 space-y-3">
+                          <div className="flex flex-wrap justify-between items-start gap-4">
+                            <div>
+                              <h4 className="text-xl font-bold text-slate-900">{milestone.label}</h4>
+                              <p className="text-sm text-slate-500 mt-1">{milestone.desc}</p>
+                            </div>
+                            <select 
+                              value={status}
+                              onChange={async (e) => {
+                                const newStatus = e.target.value;
+                                const newStatusList = { ...journey.statusList, [milestone.id]: newStatus };
+                                
+                                // Calculate new current milestone
+                                let newCurrent = journey.currentMilestone;
+                                if (newStatus === 'completed' && isCurrent) {
+                                  newCurrent = idx + 1;
+                                }
+                                
+                                const updatedJourney = { 
+                                  ...journey, 
+                                  statusList: newStatusList,
+                                  currentMilestone: newCurrent,
+                                  updatedAt: new Date().toISOString()
+                                };
+                                
+                                setJourney(updatedJourney);
+                                try {
+                                  await updateDoc(doc(db, 'journeys', user.uid), {
+                                    statusList: newStatusList,
+                                    currentMilestone: newCurrent,
+                                    updatedAt: new Date().toISOString()
+                                  });
+                                } catch (error) {
+                                  console.error("Error updating milestone:", error);
+                                }
+                              }}
+                              className={`text-xs font-bold uppercase tracking-widest rounded-full px-4 py-2 border-0 outline-none cursor-pointer ${
+                                status === 'completed' ? 'bg-emerald-100 text-emerald-700' : 
+                                status === 'in_progress' ? 'bg-amber-100 text-amber-700' : 
+                                'bg-slate-100 text-slate-500'
+                              }`}
+                            >
+                              <option value="not_started">Da Iniziare</option>
+                              <option value="in_progress">In Corso</option>
+                              <option value="completed">Completato</option>
+                            </select>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="space-y-8">
+                <div className="bg-slate-900 rounded-3xl p-8 text-white shadow-xl">
+                  <h3 className="text-xl font-black tracking-tight mb-6 flex items-center gap-3">
+                    <FileText className="w-5 h-5 text-emerald-400" /> Documenti Condivisi
+                  </h3>
+                  {journey.sharedDocs && journey.sharedDocs.length > 0 ? (
+                    <ul className="space-y-3 mb-6">
+                      {journey.sharedDocs.map((docUrl, i) => (
+                        <li key={i}>
+                          <a href={docUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 text-sm text-slate-300 hover:text-white transition-colors bg-white/5 p-3 rounded-xl hover:bg-white/10">
+                            <Download className="w-4 h-4" /> Documento {i + 1}
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <div className="text-center py-8 bg-white/5 rounded-2xl border border-white/10 border-dashed mb-6">
+                      <p className="text-sm text-slate-400">Nessun documento condiviso al momento.</p>
+                    </div>
+                  )}
+                  
+                  <a 
+                    href="mailto:info@territorisostenibili.it?subject=Invio%20Documenti%20Certificazione"
+                    className="w-full bg-emerald-600 text-white px-6 py-3 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-emerald-500 transition-colors flex items-center justify-center gap-2"
+                  >
+                    <Download className="w-4 h-4 rotate-180" /> Invia Documenti
+                  </a>
+                </div>
+
+                <div className="bg-emerald-50 rounded-3xl p-8 border border-emerald-100">
+                  <h3 className="text-xl font-black text-slate-900 tracking-tight mb-4 flex items-center gap-3">
+                    <BrainCircuit className="w-5 h-5 text-emerald-600" /> Feedback Expert
+                  </h3>
+                  {journey.adminNotes ? (
+                    <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-wrap">
+                      {journey.adminNotes}
+                    </p>
+                  ) : (
+                    <p className="text-sm text-slate-500 italic">
+                      Il team di Territori Sostenibili aggiungerà qui note e suggerimenti per il tuo percorso.
+                    </p>
+                  )}
+                </div>
+                
+                <button 
+                  onClick={() => setShowCalendar(true)}
+                  className="w-full bg-white border-2 border-slate-200 text-slate-700 px-6 py-4 rounded-2xl font-black text-xs uppercase tracking-[0.2em] hover:border-slate-300 hover:bg-slate-50 transition-all flex items-center justify-center gap-2"
+                >
+                  <Calendar className="w-4 h-4" /> Fissa una Call
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ADMIN DASHBOARD */}
+        {step === 'admin_dashboard' && user?.role === 'admin' && (
+          <div className="space-y-12 animate-in fade-in duration-1000 pb-24">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 border-b pb-8">
+              <div className="space-y-4">
+                <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-slate-900 text-white rounded-full text-[10px] font-black uppercase tracking-[0.2em]">
+                  <BrainCircuit className="w-3.5 h-3.5" /> Admin Panel
+                </div>
+                <h2 className="text-4xl sm:text-6xl font-black text-slate-900 tracking-tighter leading-none">
+                  Gestione Utenti
+                </h2>
+              </div>
+              <div className="flex items-center gap-4">
+                <button 
+                  onClick={() => setStep('corporate')}
+                  className="text-xs font-bold text-slate-400 hover:text-slate-600 uppercase tracking-widest"
+                >
+                  Torna alla Home
+                </button>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-3xl shadow-xl border border-slate-100 overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-100">
+                      <th className="p-6 text-xs font-black text-slate-500 uppercase tracking-widest">Utente</th>
+                      <th className="p-6 text-xs font-black text-slate-500 uppercase tracking-widest">Azienda</th>
+                      <th className="p-6 text-xs font-black text-slate-500 uppercase tracking-widest">Tipo</th>
+                      <th className="p-6 text-xs font-black text-slate-500 uppercase tracking-widest">Milestone</th>
+                      <th className="p-6 text-xs font-black text-slate-500 uppercase tracking-widest text-right">Azioni</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {adminUsers.map(u => {
+                      const userJourney = adminJourneys.find(j => j.userId === u.id);
+                      return (
+                        <tr key={u.id} className="hover:bg-slate-50 transition-colors">
+                          <td className="p-6">
+                            <div className="font-bold text-slate-900">{u.name}</div>
+                            <div className="text-sm text-slate-500">{u.email}</div>
+                          </td>
+                          <td className="p-6 font-medium text-slate-700">{u.companyName}</td>
+                          <td className="p-6">
+                            <span className="px-3 py-1 bg-slate-100 text-slate-600 rounded-full text-xs font-bold uppercase tracking-wider">
+                              {u.profileType}
+                            </span>
+                          </td>
+                          <td className="p-6">
+                            {userJourney ? (
+                              <div className="flex items-center gap-2">
+                                <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-black text-xs">
+                                  {userJourney.currentMilestone + 1}
+                                </div>
+                                <span className="text-sm font-medium text-slate-600">di 6</span>
+                              </div>
+                            ) : (
+                              <span className="text-sm text-slate-400 italic">Nessun percorso</span>
+                            )}
+                          </td>
+                          <td className="p-6 text-right">
+                            <button 
+                              onClick={() => {
+                                if (userJourney) {
+                                  setSelectedAdminJourney({ user: u, journey: userJourney });
+                                } else {
+                                  alert("L'utente non ha ancora iniziato un percorso.");
+                                }
+                              }}
+                              className="text-xs font-bold text-emerald-600 hover:text-emerald-700 uppercase tracking-widest"
+                            >
+                              Dettagli
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {adminUsers.length === 0 && (
+                      <tr>
+                        <td colSpan={5} className="p-8 text-center text-slate-500 italic">
+                          Nessun utente registrato.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {selectedAdminJourney && (
+              <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+                  <div className="p-8 border-b border-slate-100 flex justify-between items-center sticky top-0 bg-white/90 backdrop-blur-md">
+                    <div>
+                      <h3 className="text-2xl font-black text-slate-900">Gestione Percorso</h3>
+                      <p className="text-sm text-slate-500">{selectedAdminJourney.user.name} - {selectedAdminJourney.user.companyName}</p>
+                    </div>
+                    <button 
+                      onClick={() => setSelectedAdminJourney(null)}
+                      className="text-slate-400 hover:text-slate-600"
+                    >
+                      Chiudi
+                    </button>
+                  </div>
+                  <div className="p-8 space-y-6">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Note per l'utente</label>
+                      <textarea 
+                        className="w-full border border-slate-200 rounded-xl p-4 text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all"
+                        rows={4}
+                        value={selectedAdminJourney.journey.adminNotes || ''}
+                        onChange={(e) => {
+                          setSelectedAdminJourney({
+                            ...selectedAdminJourney,
+                            journey: { ...selectedAdminJourney.journey, adminNotes: e.target.value }
+                          });
+                        }}
+                        placeholder="Inserisci feedback o suggerimenti visibili all'utente..."
+                      ></textarea>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Link Documenti (uno per riga)</label>
+                      <textarea 
+                        className="w-full border border-slate-200 rounded-xl p-4 text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all"
+                        rows={3}
+                        value={(selectedAdminJourney.journey.sharedDocs || []).join('\n')}
+                        onChange={(e) => {
+                          const docs = e.target.value.split('\n').filter(l => l.trim() !== '');
+                          setSelectedAdminJourney({
+                            ...selectedAdminJourney,
+                            journey: { ...selectedAdminJourney.journey, sharedDocs: docs }
+                          });
+                        }}
+                        placeholder="https://drive.google.com/..."
+                      ></textarea>
+                    </div>
+                    <div className="pt-4 flex justify-end">
+                      <button 
+                        onClick={async () => {
+                          try {
+                            await updateDoc(doc(db, 'journeys', selectedAdminJourney.journey.id), {
+                              adminNotes: selectedAdminJourney.journey.adminNotes,
+                              sharedDocs: selectedAdminJourney.journey.sharedDocs,
+                              updatedAt: new Date().toISOString()
+                            });
+                            
+                            // Update local state
+                            setAdminJourneys(adminJourneys.map(j => 
+                              j.id === selectedAdminJourney.journey.id ? selectedAdminJourney.journey : j
+                            ));
+                            
+                            alert("Percorso aggiornato con successo.");
+                            setSelectedAdminJourney(null);
+                          } catch (error) {
+                            console.error("Error updating journey:", error);
+                            alert("Errore durante l'aggiornamento.");
+                          }
+                        }}
+                        className="bg-emerald-600 text-white px-6 py-3 rounded-xl font-bold text-sm uppercase tracking-widest hover:bg-emerald-700 transition-colors"
+                      >
+                        Salva Modifiche
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

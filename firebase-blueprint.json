@@ -37,6 +37,36 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["userId", "profileType", "scores", "totalScore", "answers", "createdAt"]
+    },
+    "UserJourney": {
+      "title": "UserJourney",
+      "description": "The certification journey for a user.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "type": { "type": "string", "enum": ["hotel", "dest"] },
+        "currentMilestone": { "type": "number" },
+        "statusList": { "type": "object" },
+        "adminNotes": { "type": "string" },
+        "sharedDocs": { "type": "array", "items": { "type": "string" } },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "type", "currentMilestone", "statusList", "createdAt", "updatedAt"]
+    },
+    "Milestone": {
+      "title": "Milestone",
+      "description": "A milestone in the certification journey.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "label": { "type": "string" },
+        "description": { "type": "string" },
+        "targetPillar": { "type": "string", "enum": ["E", "S", "G", "All"] },
+        "requiredEvidence": { "type": "string" },
+        "order": { "type": "number" }
+      },
+      "required": ["id", "label", "description", "targetPillar", "requiredEvidence", "order"]
     }
   },
   "firestore": {
@@ -47,6 +77,14 @@
     "/audits/{auditId}": {
       "schema": { "$ref": "#/entities/AuditResult" },
       "description": "Stores completed ESG audits."
+    },
+    "/journeys/{journeyId}": {
+      "schema": { "$ref": "#/entities/UserJourney" },
+      "description": "Stores user certification journeys."
+    },
+    "/milestones/{milestoneId}": {
+      "schema": { "$ref": "#/entities/Milestone" },
+      "description": "Stores milestone definitions."
     }
   }
 }
