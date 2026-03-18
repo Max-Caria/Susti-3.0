@@ -93,7 +93,7 @@ service cloud.firestore {
     }
 
     function isValidJourney(data) {
-      return hasOnlyAllowedFields(['userId', 'type', 'currentMilestone', 'statusList', 'adminNotes', 'sharedDocs', 'createdAt', 'updatedAt']) &&
+      return hasOnlyAllowedFields(['userId', 'type', 'currentMilestone', 'statusList', 'adminNotes', 'sharedDocs', 'createdAt', 'updatedAt', 'quoteRequested', 'quoteRequestedAt']) &&
              data.userId is string && data.userId.size() > 0 && data.userId.size() < 100 &&
              data.type in ['hotel', 'dest'] &&
              data.currentMilestone is number && data.currentMilestone >= 0 &&
@@ -101,7 +101,9 @@ service cloud.firestore {
              data.adminNotes is string && data.adminNotes.size() < 10000 &&
              data.sharedDocs is list && data.sharedDocs.size() < 100 &&
              data.createdAt is string &&
-             data.updatedAt is string;
+             data.updatedAt is string &&
+             (!('quoteRequested' in data) || data.quoteRequested is bool) &&
+             (!('quoteRequestedAt' in data) || data.quoteRequestedAt is string);
     }
 
     function isValidMilestone(data) {

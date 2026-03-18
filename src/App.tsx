@@ -6,7 +6,7 @@ import {
   Activity, ClipboardCheck, Scale, FileSignature, Briefcase, 
   GraduationCap, MapPin, Building2, Hotel, Map, Mail, Phone, MessageSquare, Search,
   Eye, Thermometer, Recycle, Waves, Heart, AlertTriangle, Lightbulb, TrendingUp,
-  FileSearch, ListChecks, Calendar, Rocket, Download, BrainCircuit, AlertCircle, FileText, User
+  FileSearch, ListChecks, Calendar, Rocket, Download, BrainCircuit, AlertCircle, User
 } from 'lucide-react';
 import { auth, db } from './firebase';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
@@ -29,6 +29,26 @@ const MATURITY_LEVELS = [
   { id: 3, label: "Consolidato", score: 66, desc: "Processi attivi, risorse e monitoraggio." },
   { id: 4, label: "Eccellenza", score: 100, desc: "Standard internazionali e innovazione." }
 ];
+
+const generateMilestones = (type: string, data: any) => {
+  if (type === 'hotel') {
+    return [
+      { id: 'm0', label: 'Audit Iniziale', desc: 'Completamento del questionario di autovalutazione ESG.' },
+      { id: 'm1', label: 'Analisi Gap', desc: 'Identificazione delle aree di miglioramento rispetto ai criteri GSTC.' },
+      { id: 'm2', label: 'Piano d\'Azione', desc: 'Definizione degli obiettivi e delle azioni correttive.' },
+      { id: 'm3', label: 'Implementazione', desc: 'Esecuzione delle azioni previste nel piano.' },
+      { id: 'm4', label: 'Certificazione', desc: 'Ottenimento della certificazione di sostenibilità.' }
+    ];
+  } else {
+    return [
+      { id: 'm0', label: 'Assessment Destinazione', desc: 'Valutazione iniziale della destinazione turistica.' },
+      { id: 'm1', label: 'Coinvolgimento Stakeholder', desc: 'Mappatura e ingaggio degli attori locali.' },
+      { id: 'm2', label: 'Strategia di Sostenibilità', desc: 'Sviluppo del piano strategico per la destinazione.' },
+      { id: 'm3', label: 'Monitoraggio Indicatori', desc: 'Implementazione del sistema di monitoraggio.' },
+      { id: 'm4', label: 'Riconoscimento', desc: 'Raggiungimento degli standard internazionali.' }
+    ];
+  }
+};
 
 // --- DATABASE INTEGRALE ---
 export default function App() {
@@ -1605,32 +1625,69 @@ export default function App() {
               <div className="space-y-6">
                 <h3 className="text-2xl font-black text-slate-900 tracking-tight">Milestones</h3>
                 
-                {[
-                  { id: 'm1', label: 'Gap Analysis & Assessment', desc: 'Analisi dettagliata dello stato attuale rispetto agli standard GSTC.' },
-                  { id: 'm2', label: 'Action Plan & Strategia', desc: 'Definizione del piano d\'azione per colmare i gap identificati.' },
-                  { id: 'm3', label: 'Implementazione Pratiche ESG', desc: 'Adozione delle policy e procedure richieste dallo standard.' },
-                  { id: 'm4', label: 'Formazione Staff', desc: 'Coinvolgimento e formazione del personale sulle nuove pratiche.' },
-                  { id: 'm5', label: 'Pre-Audit Interno', desc: 'Verifica finale della conformità prima dell\'audit ufficiale.' },
-                  { id: 'm6', label: 'Audit di Certificazione', desc: 'Audit ufficiale con ente terzo accreditato.' }
-                ].map((milestone, idx) => {
+                {journey.currentMilestone === 0 && (
+                  <div className="bg-emerald-50 border border-emerald-100 rounded-3xl p-8 mb-8 text-center shadow-sm">
+                    <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <Calendar className="w-8 h-8" />
+                    </div>
+                    <h3 className="text-2xl font-black text-slate-900 mb-3">Inizia il tuo percorso</h3>
+                    <p className="text-slate-600 mb-8 max-w-md mx-auto">
+                      Hai completato l'audit iniziale. Il prossimo passo è fissare una call gratuita con i nostri esperti per definire il piano d'azione personalizzato e il preventivo.
+                    </p>
+                    
+                    {!journey.quoteRequested ? (
+                      <button 
+                        onClick={async () => {
+                          try {
+                            await updateDoc(doc(db, 'journeys', journey.id), {
+                              quoteRequested: true,
+                              quoteRequestedAt: new Date().toISOString(),
+                              updatedAt: new Date().toISOString()
+                            });
+                            setJourney({ ...journey, quoteRequested: true, quoteRequestedAt: new Date().toISOString() });
+                          } catch (error) {
+                            console.error("Error requesting quote:", error);
+                            alert("Errore durante l'invio della richiesta. Riprova.");
+                          }
+                        }}
+                        className="bg-emerald-600 text-white px-8 py-4 rounded-xl font-bold uppercase tracking-widest hover:bg-emerald-700 transition-colors shadow-lg shadow-emerald-600/20 flex items-center justify-center mx-auto"
+                      >
+                        Richiedi Appuntamento Gratuito
+                      </button>
+                    ) : (
+                      <div className="inline-flex items-center justify-center text-emerald-700 font-bold bg-emerald-100/50 py-4 px-8 rounded-xl border border-emerald-200">
+                        <CheckCircle2 className="w-6 h-6 mr-3 text-emerald-600" />
+                        Richiesta inviata! Ti contatteremo a breve.
+                      </div>
+                    )}
+                  </div>
+                )}
+                
+                {generateMilestones(journey.type, null).map((milestone, idx) => {
                   const status = journey.statusList[milestone.id] || 'not_started';
                   const isCurrent = journey.currentMilestone === idx;
+                  const isLocked = journey.currentMilestone === 0 && idx > 0;
                   
                   return (
-                    <div key={milestone.id} className={`p-6 rounded-3xl border-2 transition-all ${isCurrent ? 'border-emerald-500 bg-emerald-50/50 shadow-md' : 'border-slate-100 bg-white'}`}>
+                    <div key={milestone.id} className={`p-6 rounded-3xl border-2 transition-all ${isCurrent ? 'border-emerald-500 bg-emerald-50/50 shadow-md' : isLocked ? 'border-slate-100 bg-slate-50 opacity-60' : 'border-slate-100 bg-white'}`}>
                       <div className="flex flex-col sm:flex-row gap-6 items-start">
                         <div className={`w-12 h-12 shrink-0 rounded-full flex items-center justify-center font-black text-lg ${status === 'completed' ? 'bg-emerald-600 text-white' : isCurrent ? 'bg-emerald-200 text-emerald-800' : 'bg-slate-100 text-slate-400'}`}>
-                          {status === 'completed' ? <ListChecks className="w-6 h-6" /> : idx + 1}
+                          {status === 'completed' ? <ListChecks className="w-6 h-6" /> : idx}
                         </div>
-                        <div className="flex-1 space-y-3">
+                        <div className="flex-1 space-y-3 w-full">
                           <div className="flex flex-wrap justify-between items-start gap-4">
-                            <div>
-                              <h4 className="text-xl font-bold text-slate-900">{milestone.label}</h4>
+                            <div className="flex-1">
+                              <div className="flex items-center gap-3">
+                                <h4 className="text-xl font-bold text-slate-900">{milestone.label}</h4>
+                                {isLocked && <span className="text-[10px] font-bold uppercase tracking-widest bg-slate-200 text-slate-500 px-2 py-0.5 rounded-full">Bloccato</span>}
+                              </div>
                               <p className="text-sm text-slate-500 mt-1">{milestone.desc}</p>
                             </div>
-                            <select 
-                              value={status}
-                              onChange={async (e) => {
+                            
+                            {!isLocked && idx > 0 && (
+                              <select 
+                                value={status}
+                                onChange={async (e) => {
                                 const newStatus = e.target.value;
                                 const newStatusList = { ...journey.statusList, [milestone.id]: newStatus };
                                 
@@ -1668,6 +1725,7 @@ export default function App() {
                               <option value="in_progress">In Corso</option>
                               <option value="completed">Completato</option>
                             </select>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -1782,11 +1840,19 @@ export default function App() {
                           </td>
                           <td className="p-6">
                             {userJourney ? (
-                              <div className="flex items-center gap-2">
-                                <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-black text-xs">
-                                  {userJourney.currentMilestone + 1}
+                              <div className="flex flex-col gap-2 items-start">
+                                <div className="flex items-center gap-2">
+                                  <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-black text-xs">
+                                    {userJourney.currentMilestone}
+                                  </div>
+                                  <span className="text-sm font-medium text-slate-600">di 5</span>
                                 </div>
-                                <span className="text-sm font-medium text-slate-600">di 6</span>
+                                {userJourney.quoteRequested && userJourney.currentMilestone === 0 && (
+                                  <span className="bg-amber-100 text-amber-800 text-[10px] px-2 py-1 rounded-full font-bold uppercase tracking-widest flex items-center">
+                                    <AlertCircle className="w-3 h-3 mr-1" />
+                                    Richiesta Call
+                                  </span>
+                                )}
                               </div>
                             ) : (
                               <span className="text-sm text-slate-400 italic">Nessun percorso</span>
@@ -1837,6 +1903,66 @@ export default function App() {
                     </button>
                   </div>
                   <div className="p-8 space-y-6">
+                    {selectedAdminJourney.journey.quoteRequested && selectedAdminJourney.journey.currentMilestone === 0 && (
+                      <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+                        <div>
+                          <h4 className="text-amber-900 font-bold flex items-center">
+                            <AlertCircle className="w-5 h-5 mr-2" />
+                            Richiesta Appuntamento Ricevuta
+                          </h4>
+                          <p className="text-sm text-amber-700 mt-1">L'utente ha richiesto una call conoscitiva per il preventivo.</p>
+                        </div>
+                        <button 
+                          onClick={async () => {
+                            try {
+                              const newStatusList = { ...selectedAdminJourney.journey.statusList, 'm0': 'completed' };
+                              await updateDoc(doc(db, 'journeys', selectedAdminJourney.journey.id), {
+                                currentMilestone: 1,
+                                statusList: newStatusList,
+                                updatedAt: new Date().toISOString()
+                              });
+                              
+                              const updatedJourney = { 
+                                ...selectedAdminJourney.journey, 
+                                currentMilestone: 1,
+                                statusList: newStatusList
+                              };
+                              
+                              setSelectedAdminJourney({ ...selectedAdminJourney, journey: updatedJourney });
+                              setAdminJourneys(adminJourneys.map(j => j.id === updatedJourney.id ? updatedJourney : j));
+                              
+                              alert("Contratto attivato! L'utente è passato alla Fase 1.");
+                            } catch (error) {
+                              console.error("Error updating contract status:", error);
+                              alert("Errore durante l'aggiornamento.");
+                            }
+                          }}
+                          className="bg-amber-500 text-white px-4 py-2 rounded-lg font-bold text-sm hover:bg-amber-600 transition-colors whitespace-nowrap"
+                        >
+                          Segna come Contrattualizzato
+                        </button>
+                      </div>
+                    )}
+                    
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Avanzamento Manuale Milestone</label>
+                      <select 
+                        className="w-full border border-slate-200 rounded-xl p-4 text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all font-bold text-slate-700"
+                        value={selectedAdminJourney.journey.currentMilestone}
+                        onChange={(e) => {
+                          const newMilestone = parseInt(e.target.value);
+                          setSelectedAdminJourney({
+                            ...selectedAdminJourney,
+                            journey: { ...selectedAdminJourney.journey, currentMilestone: newMilestone }
+                          });
+                        }}
+                      >
+                        {generateMilestones(selectedAdminJourney.journey.type, null).map((m, idx) => (
+                          <option key={m.id} value={idx}>{idx}. {m.label}</option>
+                        ))}
+                      </select>
+                    </div>
+
                     <div>
                       <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Note per l'utente</label>
                       <textarea 
@@ -1875,6 +2001,7 @@ export default function App() {
                             await updateDoc(doc(db, 'journeys', selectedAdminJourney.journey.id), {
                               adminNotes: selectedAdminJourney.journey.adminNotes,
                               sharedDocs: selectedAdminJourney.journey.sharedDocs,
+                              currentMilestone: selectedAdminJourney.journey.currentMilestone,
                               updatedAt: new Date().toISOString()
                             });
                             
