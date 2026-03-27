@@ -289,6 +289,9 @@ export default function App() {
         const val = answers[q.id];
         if (val === undefined || val === null) return null;
         
+        if (q.type === 'text') {
+          return null;
+        }
         if (q.type === 'likert') {
           return (val - 1) * 25; // 1-5 -> 0-100
         }
@@ -327,6 +330,7 @@ export default function App() {
         const val = answers[q.id];
         if (val === undefined || val === null) return null;
         
+        if (q.type === 'text') return null;
         if (q.type === 'likert') return (val - 1) * 25;
         if (q.type === 'binary') return val ? 100 : 0;
         if (q.type === 'single-choice') {
@@ -395,7 +399,17 @@ export default function App() {
       ];
     }
 
-    return { totalScore, pillarScores, answeredCount: count, verticalScores, expertInsights: { maturityLevel, checklist, metrics, roadmap } };
+    const textualAnswers = (currentVerticals as any[])?.flatMap(v => {
+      return v.questions
+        .filter((q: any) => q.type === 'text' && answers[q.id] && answers[q.id].trim() !== '')
+        .map((q: any) => ({
+          pillar: v.title,
+          questionText: q.text,
+          answerText: answers[q.id]
+        }));
+    }) || [];
+
+    return { totalScore, pillarScores, answeredCount: count, verticalScores, expertInsights: { maturityLevel, checklist, metrics, roadmap }, textualAnswers };
   }, [answers, currentVerticals, auditType]);
 
   const handleNextVertical = async () => {
@@ -1093,6 +1107,16 @@ export default function App() {
                         </div>
 
                         <div className="pt-2 sm:pt-6">
+                          {q.type === 'text' && (
+                            <div className="w-full">
+                              <textarea
+                                value={answers[q.id] || ''}
+                                onChange={(e) => updateAnswer(q.id, e.target.value)}
+                                placeholder="Scrivi qui la tua risposta..."
+                                className="w-full p-4 sm:p-5 rounded-xl sm:rounded-[24px] border-2 border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 outline-none transition-all text-sm sm:text-base text-slate-700 min-h-[120px] resize-y"
+                              />
+                            </div>
+                          )}
                           {q.type === 'likert' && (
                             <div className="flex flex-wrap gap-2 sm:gap-4">
                               {[1, 2, 3, 4, 5].map(val => (
@@ -1153,7 +1177,7 @@ export default function App() {
                 </button>
                 <button 
                   onClick={handleNextVertical} 
-                  disabled={activeVertical.questions.filter((q: any) => !q.dependsOn || answers[q.dependsOn.id] === q.dependsOn.value).some((q: any) => answers[q.id] === undefined || (Array.isArray(answers[q.id]) && answers[q.id].length === 0))}
+                  disabled={activeVertical.questions.filter((q: any) => !q.dependsOn || answers[q.dependsOn.id] === q.dependsOn.value).some((q: any) => q.type !== 'text' && (answers[q.id] === undefined || (Array.isArray(answers[q.id]) && answers[q.id].length === 0)))}
                   className="bg-slate-900 text-white px-8 sm:px-14 py-5 sm:py-6 rounded-full sm:rounded-[30px] font-black text-[10px] sm:text-xs uppercase tracking-[0.3em] shadow-2xl hover:bg-emerald-700 transition-all flex items-center justify-center gap-3 sm:gap-4 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {activeVerticalIdx < currentVerticals.length - 1 ? 'Analizza & Procedi' : 'Completa Audit'} <ChevronRight className="w-4 h-4" />
@@ -1421,6 +1445,33 @@ export default function App() {
                   </div>
                </div>
             </div>
+
+            {/* Executive Summary Qualitativo */}
+            {stats.textualAnswers && stats.textualAnswers.length > 0 && (
+              <div className="space-y-6 sm:space-y-10 print-break-before">
+                 <div className="flex items-center gap-3 sm:gap-4 border-b border-slate-200 pb-4 sm:pb-6">
+                    <div className="w-10 h-10 sm:w-12 sm:h-12 bg-emerald-100 text-emerald-600 rounded-xl sm:rounded-2xl flex items-center justify-center shadow-inner">
+                       <FileText className="w-5 h-5 sm:w-6 sm:h-6" />
+                    </div>
+                    <h3 className="text-2xl sm:text-4xl font-black text-slate-800 tracking-tight">Executive Summary Qualitativo</h3>
+                 </div>
+                 <div className="grid grid-cols-1 gap-6 sm:gap-8">
+                    {stats.textualAnswers.map((item: any, i: number) => (
+                       <div key={i} className="bg-white p-6 sm:p-8 rounded-[24px] sm:rounded-[32px] border border-slate-100 shadow-sm print:break-inside-avoid">
+                          <div className="flex items-center gap-2 mb-4">
+                             <span className="text-[10px] sm:text-xs font-black uppercase tracking-widest text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full">
+                                {item.pillar}
+                             </span>
+                          </div>
+                          <h4 className="text-sm sm:text-base font-bold text-slate-800 mb-3">{item.questionText}</h4>
+                          <p className="text-sm sm:text-base text-slate-600 leading-relaxed italic border-l-4 border-emerald-200 pl-4 py-1">
+                             "{item.answerText}"
+                          </p>
+                       </div>
+                    ))}
+                 </div>
+              </div>
+            )}
 
             {/* Calendar Booking */}
             <div className="bg-white border border-slate-100 rounded-[40px] sm:rounded-[80px] p-8 sm:p-16 shadow-sm relative overflow-hidden print:hidden text-center">
