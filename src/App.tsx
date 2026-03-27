@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { GoogleGenAI } from "@google/genai";
 import { 
   Leaf, Users, Globe, ShieldCheck, BarChart3, ArrowRight, Target, Zap, 
   CheckCircle2, ChevronLeft, ChevronRight, FileText, 
@@ -15,6 +16,7 @@ import { VERTICALS_HOTEL, VERTICALS_DEST } from './data/questions';
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer } from 'recharts';
 import { toPng } from 'html-to-image';
 import { jsPDF } from 'jspdf';
+import Markdown from 'react-markdown';
 
 // --- CONFIGURAZIONE ESG ---
 const ESG_MAP = {
@@ -71,6 +73,7 @@ export default function App() {
   const [adminJourneys, setAdminJourneys] = useState([]);
   const [selectedAdminJourney, setSelectedAdminJourney] = useState(null);
   const [loginEmail, setLoginEmail] = useState('');
+  const [interpretiveSummary, setInterpretiveSummary] = useState<string | null>(null);
 
   const handleUserLoginSetup = async (userObj, email, name, companyName) => {
     try {
@@ -474,6 +477,39 @@ export default function App() {
     }
   };
 
+  const generateSummary = async (currentStats: any, textualAnswers: any[]) => {
+    if (!textualAnswers || textualAnswers.length === 0) return;
+    
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const prompt = `
+Sei un consulente esperto in sostenibilità ESG (Environmental, Social, Governance) per il settore turistico.
+L'utente ha appena completato un audit di sostenibilità.
+Ecco i punteggi quantitativi ottenuti:
+- Punteggio Totale: ${currentStats.totalScore}%
+- Ambiente (E): ${currentStats.pillarScores.E}%
+- Sociale (S): ${currentStats.pillarScores.S}%
+- Governance (G): ${currentStats.pillarScores.G}%
+
+Ecco le risposte qualitative fornite dall'utente:
+${textualAnswers.map(a => `- ${a.pillar} | ${a.questionText}: "${a.answerText}"`).join('\n')}
+
+Scrivi un "Executive Summary Qualitativo" interpretativo.
+NON limitarti a riassumere o parafrasare le risposte.
+Devi analizzare il contesto: collega le risposte qualitative ai punteggi quantitativi, identifica le vere sfide sottostanti, le opportunità strategiche e fornisci un'interpretazione da esperto su come la struttura/destinazione si sta posizionando.
+Usa un tono professionale, incoraggiante ma analitico. Formatta il testo in paragrafi brevi e leggibili (puoi usare il markdown per grassetti).
+`;
+      const response = await ai.models.generateContent({
+        model: "gemini-3.1-pro-preview",
+        contents: prompt,
+      });
+      setInterpretiveSummary(response.text);
+    } catch (error) {
+      console.error("Errore generazione summary:", error);
+      setInterpretiveSummary("Non è stato possibile generare l'analisi interpretativa al momento.");
+    }
+  };
+
   const handleLeadSubmit = async (e) => {
     e.preventDefault();
     if (!formData.privacy) {
@@ -483,6 +519,9 @@ export default function App() {
     setStep('processing');
     setProcessingText("Salvataggio dati e Generazione Executive Report...");
     
+    // Start generating the interpretive summary in the background
+    generateSummary(stats, stats.textualAnswers);
+
     try {
       // API call to backend for Google Sheets / Email
       try {
@@ -1455,20 +1494,17 @@ export default function App() {
                     </div>
                     <h3 className="text-2xl sm:text-4xl font-black text-slate-800 tracking-tight">Executive Summary Qualitativo</h3>
                  </div>
-                 <div className="grid grid-cols-1 gap-6 sm:gap-8">
-                    {stats.textualAnswers.map((item: any, i: number) => (
-                       <div key={i} className="bg-white p-6 sm:p-8 rounded-[24px] sm:rounded-[32px] border border-slate-100 shadow-sm print:break-inside-avoid">
-                          <div className="flex items-center gap-2 mb-4">
-                             <span className="text-[10px] sm:text-xs font-black uppercase tracking-widest text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full">
-                                {item.pillar}
-                             </span>
-                          </div>
-                          <h4 className="text-sm sm:text-base font-bold text-slate-800 mb-3">{item.questionText}</h4>
-                          <p className="text-sm sm:text-base text-slate-600 leading-relaxed italic border-l-4 border-emerald-200 pl-4 py-1">
-                             "{item.answerText}"
-                          </p>
+                 <div className="bg-white p-6 sm:p-10 rounded-[24px] sm:rounded-[40px] border border-slate-100 shadow-sm print:break-inside-avoid">
+                    {interpretiveSummary ? (
+                       <div className="prose prose-slate prose-emerald max-w-none text-sm sm:text-base leading-relaxed">
+                          <Markdown>{interpretiveSummary}</Markdown>
                        </div>
-                    ))}
+                    ) : (
+                       <div className="flex flex-col items-center justify-center py-12 text-slate-400 space-y-4">
+                          <div className="w-12 h-12 border-4 border-emerald-100 border-t-emerald-500 rounded-full animate-spin"></div>
+                          <p className="text-sm font-medium animate-pulse">Generazione analisi interpretativa in corso...</p>
+                       </div>
+                    )}
                  </div>
               </div>
             )}
