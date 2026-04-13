@@ -12,6 +12,28 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Basic Auth Middleware per l'ambiente locale / Express
+app.use((req, res, next) => {
+  // Escludi le API pubbliche se necessario, oppure proteggi tutto
+  const b64auth = (req.headers.authorization || '').split(' ')[1] || '';
+  const [login, password] = Buffer.from(b64auth, 'base64').toString().split(':');
+
+  const validUser = process.env.BASIC_AUTH_USER;
+  const validPwd = process.env.BASIC_AUTH_PWD;
+
+  // Se le variabili d'ambiente non sono impostate, salta l'autenticazione (utile per sviluppo se non configurato)
+  if (!validUser || !validPwd) {
+    return next();
+  }
+
+  if (login && password && login === validUser && password === validPwd) {
+    return next();
+  }
+
+  res.set('WWW-Authenticate', 'Basic realm="Secure Area"');
+  res.status(401).send('Autenticazione richiesta.');
+});
+
 // Configurazione Nodemailer (SMTP)
 // Esempio con Gmail, ma può essere qualsiasi provider SMTP
 const transporter = nodemailer.createTransport({
